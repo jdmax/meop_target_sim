@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Two-cell polarized 3He exchange model: tube conduction, diffusion and thermosiphon exchange, MEOP pumping and relaxation, running in Python (Pyodide) in the browser.">
+<title>³He Two-Cell Exchange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&display=swap">
+<style>
+/* Layout: instrument-panel split — controls rail on the left, live cryostat schematic + readouts on the right, trace and model source below. */
+:root {
+  --bg: #EDF1F3;
+  --panel: #F9FBFC;
+  --ink: #13212B;
+  --muted: #5A6A74;
+  --line: #C9D3D9;
+  --accent: #2C6E72;
+  --warm: #B9531C;
+  --cold: #2860A6;
+  --good: #2F7D4A;
+  --warn: #A86A0B;
+  --bad: #B23A2E;
+  --glass: rgba(120, 160, 180, 0.10);
+  --metal: #D8DEE2;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
+    --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E;
+    --glass: rgba(150, 190, 210, 0.07); --metal: #2A343B; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
+  --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E;
+  --glass: rgba(150, 190, 210, 0.07); --metal: #2A343B; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); }
+.app {
+  max-width: 1360px; margin: 0 auto;
+  padding-block: 20px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px;
+}
+h1, h2, h3, .label, .seg button, .chip { font-family: var(--font-display); }
+h1 { font-size: 30px; line-height: 1.05; font-weight: 700; margin: 0; letter-spacing: 0.005em; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin: 0; }
+.num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+header .sub { color: var(--muted); margin: 6px 0 0; max-width: 70ch; }
+.engine {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); font: 500 13px var(--font-mono); white-space: nowrap;
+}
+.engine .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.engine[data-state="loading"] .dot { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+.engine[data-state="python"] .dot { background: var(--good); }
+.engine[data-state="js"] .dot { background: var(--warn); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+.layout { display: grid; grid-template-columns: minmax(270px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 920px) { .layout { grid-template-columns: minmax(0, 1fr); } .main { order: -1; } }
+
+/* controls */
+.rail { display: grid; gap: 12px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); padding: 9px 6px; font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px;
+  padding: 4px 9px; font-size: 13.5px; font-weight: 500; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 0; padding: 10px 12px 12px; min-width: 0; }
+fieldset[hidden] { display: none !important; }
+legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); padding: 0 4px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 2px 10px; align-items: center; padding: 5px 0; }
+.row + .row { border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.row label { font-size: 14px; color: var(--ink); }
+.row .unit { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+.row input[type="number"] {
+  width: 100%; font: 500 13.5px var(--font-mono); text-align: right; padding: 3px 6px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink);
+}
+.row input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 14px; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+
+/* stage */
+.main { display: grid; gap: 18px; min-width: 0; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.scene-wrap { position: relative; }
+#scene { display: block; width: 100%; height: 560px; max-width: 100%; }
+@media (max-width: 520px) { #scene { height: 500px; } }
+.tlegend { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.tlegend .bar { flex: 1; height: 8px; border-radius: 4px; min-width: 80px; }
+.tlegend .ticks { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+.readouts { display: grid; gap: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); min-width: 0; }
+.kpi .k { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.kpi .v { font: 500 26px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .s { font-size: 12.5px; color: var(--muted); }
+.kpi.pump .v { color: var(--warm); }
+.kpi.target .v { color: var(--cold); }
+@media (max-width: 460px) { .kpi .v { font-size: 21px; } }
+dl.facts { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; margin: 8px 0 0; font-size: 14px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pill { font: 600 11.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.good { color: var(--good); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.meter { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--line) 60%, transparent); overflow: hidden; margin-top: 4px; }
+.meter > span { display: block; height: 100%; border-radius: 4px; }
+.budget { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 10px 0 6px; background: color-mix(in srgb, var(--line) 50%, transparent); }
+.budget span { display: block; height: 100%; }
+.blegend { display: grid; gap: 3px; font-size: 13px; }
+.blegend div { display: flex; justify-content: space-between; gap: 10px; }
+.blegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.warnings { display: grid; gap: 6px; }
+.warnings p { margin: 0; font-size: 13.5px; padding: 7px 10px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); border-radius: 0 6px 6px 0; }
+
+/* chart */
+.chart-head { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+.legend { display: flex; gap: 14px; font-size: 13.5px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: 4px; margin-right: 6px; }
+.btn {
+  font: 600 14px var(--font-display); border: 1px solid var(--ink); background: var(--ink); color: var(--bg);
+  border-radius: 7px; padding: 6px 14px; cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+#tread { font: 500 13px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+#tread b { font-weight: 500; }
+#chart { display: block; width: 100%; height: 250px; margin-top: 8px; touch-action: pan-y; cursor: crosshair; }
+
+/* source */
+details.src > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+details.src > summary::-webkit-details-marker { display: none; }
+details.src > summary h2::before { content: "▸ "; }
+details.src[open] > summary h2::before { content: "▾ "; }
+.src-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+#code {
+  margin: 0 0 10px; max-height: 560px; overflow: auto; font: 13px/1.5 var(--font-mono); tab-size: 4;
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; white-space: pre;
+}
+#code .tc { color: var(--muted); font-style: italic; }
+#code .ts { color: var(--accent); }
+#srcName { color: var(--muted); font-size: 13px; }
+#srcStatus { font-size: 13.5px; color: var(--muted); }
+.notes { color: var(--muted); font-size: 13.5px; margin: 0; }
+.notes li { margin: 3px 0; }
+@media (prefers-reduced-motion: reduce) { .engine .dot { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>³He Two-Cell Exchange</h1>
+      <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and its source is listed at the bottom.</p>
+    </div>
+    <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Model inputs">
+      <div class="seg" role="group" aria-label="Gas exchange configuration">
+        <button type="button" id="modeSingle" aria-pressed="false">Single tube</button>
+        <button type="button" id="modeLoop" aria-pressed="true">Convection loop</button>
+      </div>
+      <div class="chips" id="presets" aria-label="Presets"></div>
+      <fieldset id="fs-cells"><legend>Gas and cells</legend></fieldset>
+      <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
+      <fieldset id="fs-loop"><legend>Cold-end engine</legend></fieldset>
+      <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
+      <fieldset id="fs-pump"><legend>Pumping and relaxation</legend></fieldset>
+    </aside>
+
+    <main class="main">
+      <div class="stage">
+        <section class="card scene-wrap" aria-label="Cell schematic">
+          <canvas id="scene" role="img" aria-label="Schematic of the pumping cell, transfer tubes and target cell"></canvas>
+          <div class="tlegend">
+            <span>Tube T</span>
+            <div style="flex:1;min-width:0">
+              <div class="bar" id="tbar"></div>
+              <div class="ticks"><span>5 K</span><span>15</span><span>40</span><span>100</span><span>300 K</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="readouts" aria-label="Results">
+          <div class="kpis">
+            <div class="kpi pump"><div class="k">Pumping cell</div><div class="v" id="kPp">–</div><div class="s" id="kPpS">steady state</div></div>
+            <div class="kpi target"><div class="k">Target cell</div><div class="v" id="kPt">–</div><div class="s" id="kPtS">steady state</div></div>
+            <div class="kpi"><div class="k">Target / pump</div><div class="v" id="kR">–</div><div class="s" id="kRS">steady ratio</div></div>
+          </div>
+
+          <div class="card">
+            <div class="section-head"><h2>Gas exchange</h2><span class="pill" id="xPill"></span></div>
+            <dl class="facts" id="xFacts"></dl>
+          </div>
+
+          <div class="card">
+            <div class="section-head"><h2>Where the pumped polarization goes</h2></div>
+            <div class="budget" id="budget"></div>
+            <div class="blegend" id="blegend"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-head"><h2>Heat</h2><span class="pill" id="hPill"></span></div>
+            <dl class="facts" id="hFacts"></dl>
+            <div class="meter" aria-hidden="true"><span id="hMeter"></span></div>
+            <p class="hint">Bar: 5 K stage load against the PT420 rating of 2.0 W at 4.2 K.</p>
+          </div>
+
+          <div class="warnings" id="warnings"></div>
+        </section>
+      </div>
+
+      <section class="card" aria-label="Polarization versus time">
+        <div class="chart-head">
+          <h2>Polarization build-up</h2>
+          <div class="legend">
+            <span><i style="background:var(--warm)"></i>Pumping cell</span>
+            <span><i style="background:var(--cold)"></i>Target cell</span>
+          </div>
+          <span id="tread" aria-live="polite">Hover or tap the chart to read values</span>
+        </div>
+        <canvas id="chart" aria-label="Polarization of both cells versus time; hover or tap to read values"></canvas>
+      </section>
+
+      <section class="card">
+        <details class="src" id="srcDetails">
+          <summary><h2>Model source (Python)</h2><span id="srcStatus">Waiting for Python…</span></summary>
+          <div class="src-bar">
+            <span class="mono" id="srcName">he3_model.py</span>
+            <button class="btn ghost" type="button" id="copyCode">Copy</button>
+          </div>
+          <pre id="code" tabindex="0" aria-label="Python model source"><code>Loading…</code></pre>
+          <ul class="notes">
+            <li>This is the code that produced the numbers on this page. Its entry point <span class="mono">run(params_json)</span> takes the inputs as JSON and returns every result shown.</li>
+            <li>Not modeled: radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
+          </ul>
+        </details>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script type="text/x-python" id="model-py"></script>
+<script src="he3_model.js"></script>
+<script>
+(function () {
+"use strict";
+const PYO_VER = "0.26.4";
+const CDN_NPM = "https://cdn.jsdelivr.net/npm/pyodide@" + PYO_VER + "/";
+const CDN_FULL = "https://cdn.jsdelivr.net/pyodide/v" + PYO_VER + "/full/";
+const SELF_HOSTED = /*__SELF_HOSTED__*/false;   // artifact build: Pyodide runtime is published beside the page
+let MODEL_PY = "";
+
+/* ---------------------------------------------------------------- params */
+const DEFAULTS = {
+  mode: "loop", p_mbar: 100, Tc: 5, Th: 300,
+  id_mm: 8, wall_mm: 1, length_cm: 10,
+  engine_cm: 2, gap_cm: 0.5, T_engine: 25,
+  intercept: true, T_int: 45, s_int_cm: 4,
+  V_pump_cc: 49, V_target_cc: 100,
+  T_op_s: 240, P_lim: 80, T1p_on_s: 400, T1p_off_h: 1, T1t_h: 10,
+  run_h: 24, on_h: 24,
+};
+const DEFS = [
+  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
+  { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
+  { fs: "cells", key: "V_target_cc", label: "Target cell volume", unit: "cm³", min: 5, max: 500, log: true, dp: 0 },
+  { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 4, max: 30, dp: 1 },
+  { fs: "tubes", key: "id_mm", label: "Inner diameter", unit: "mm", min: 2, max: 16, dp: 1 },
+  { fs: "tubes", key: "wall_mm", label: "Wall thickness", unit: "mm", min: 0.5, max: 2.5, dp: 2 },
+  { fs: "tubes", key: "length_cm", label: "Length, cell to cell", unit: "cm", min: 3, max: 40, dp: 1 },
+  { fs: "loop", key: "engine_cm", label: "Engine height", unit: "cm", min: 0.5, max: 8, dp: 1 },
+  { fs: "loop", key: "T_engine", label: "Riser engine temperature", unit: "K", min: 4, max: 300, log: true, dp: 1 },
+  { fs: "loop", key: "gap_cm", label: "Isolating gap below engine", unit: "cm", min: 0.1, max: 3, dp: 2 },
+  { fs: "int", key: "intercept", label: "Intercept on", toggle: true },
+  { fs: "int", key: "T_int", label: "Intercept temperature", unit: "K", min: 15, max: 120, dp: 0 },
+  { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 39, dp: 1 },
+  { fs: "pump", key: "T_op_s", label: "Optical pumping time 1/Γ_op", unit: "s", min: 10, max: 5000, log: true, dp: 0 },
+  { fs: "pump", key: "P_lim", label: "Optical pumping limit", unit: "%", min: 5, max: 98, dp: 0 },
+  { fs: "pump", key: "T1p_on_s", label: "Pump-cell T₁, discharge on", unit: "s", min: 20, max: 20000, log: true, dp: 0 },
+  { fs: "pump", key: "T1t_h", label: "Target-cell T₁", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
+  { fs: "pump", key: "run_h", label: "Run length", unit: "h", min: 0.25, max: 96, log: true, dp: 2 },
+  { fs: "pump", key: "on_h", label: "Discharge on for", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
+  { fs: "pump", key: "T1p_off_h", label: "Pump-cell T₁, discharge off", unit: "h", min: 0.05, max: 100, log: true, dp: 2 },
+];
+const PRESETS = [
+  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, intercept: false } },
+  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
+  { name: "Loop, engine off", p: { mode: "loop", T_engine: 5, intercept: false } },
+  { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },
+  { name: "Defaults", p: DEFAULTS },
+];
+
+let params = Object.assign({}, DEFAULTS);
+try { const saved = JSON.parse(localStorage.getItem("he3x-params") || "null"); if (saved) params = Object.assign({}, DEFAULTS, saved); } catch (e) {}
+const save = () => { try { localStorage.setItem("he3x-params", JSON.stringify(params)); } catch (e) {} };
+
+const $ = id => document.getElementById(id);
+const inputs = {};
+const toSlider = (d, v) => d.log ? (Math.log(v / d.min) / Math.log(d.max / d.min)) * 1000 : ((v - d.min) / (d.max - d.min)) * 1000;
+const fromSlider = (d, x) => d.log ? d.min * Math.pow(d.max / d.min, x / 1000) : d.min + (d.max - d.min) * x / 1000;
+const roundTo = (v, dp) => { const f = Math.pow(10, dp); return Math.round(v * f) / f; };
+
+DEFS.forEach(d => {
+  const fs = $("fs-" + d.fs);
+  if (d.toggle) {
+    const lab = document.createElement("label");
+    lab.className = "toggle";
+    lab.innerHTML = `<span>${d.label}</span><input type="checkbox" id="in-${d.key}">`;
+    fs.appendChild(lab);
+    const cb = lab.querySelector("input");
+    cb.addEventListener("change", () => { params[d.key] = cb.checked; changed(true); });
+    inputs[d.key] = { d, cb };
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<label for="num-${d.key}">${d.label}<span class="unit">${d.unit}</span></label>
+    <input type="number" id="num-${d.key}" step="any" min="${d.min}" max="${d.max}">
+    <input type="range" id="rng-${d.key}" min="0" max="1000" step="1" aria-label="${d.label}">`;
+  fs.appendChild(row);
+  const num = row.querySelector('input[type="number"]'), rng = row.querySelector('input[type="range"]');
+  rng.addEventListener("input", () => { params[d.key] = roundTo(fromSlider(d, +rng.value), d.dp); num.value = params[d.key]; changed(false); });
+  rng.addEventListener("change", () => changed(true));
+  num.addEventListener("change", () => {
+    let v = parseFloat(num.value);
+    if (!isFinite(v)) v = params[d.key];
+    v = Math.min(d.max, Math.max(d.min, v));
+    params[d.key] = v; num.value = v; rng.value = toSlider(d, v); changed(true);
+  });
+  inputs[d.key] = { d, num, rng };
+});
+$("fs-pump").insertAdjacentHTML("beforeend", '<p class="hint" id="sealedHint"></p>');
+
+function syncInputs() {
+  for (const k in inputs) {
+    const it = inputs[k];
+    if (it.cb) it.cb.checked = !!params[k];
+    else { it.num.value = params[k]; it.rng.value = toSlider(it.d, params[k]); }
+  }
+  $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
+  $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
+  $("fs-loop").hidden = params.mode !== "loop";
+  $("fs-int").querySelector("legend").textContent = params.mode === "loop" ? "Intercept on the downcomer" : "Intercept on the tube";
+  ["T_int", "s_int_cm"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.intercept; });
+}
+$("modeSingle").addEventListener("click", () => { params.mode = "single"; syncInputs(); changed(true); });
+$("modeLoop").addEventListener("click", () => { params.mode = "loop"; syncInputs(); changed(true); });
+PRESETS.forEach(p => {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "chip"; b.textContent = p.name;
+  b.addEventListener("click", () => { params = Object.assign({}, p.p === DEFAULTS ? DEFAULTS : params, p.p); syncInputs(); changed(true); });
+  $("presets").appendChild(b);
+});
+
+/* ---------------------------------------------------------------- engines */
+let py = null, pyRun = null, jsAgrees = true, R = null, lastPyMs = null;
+function setEngine(state, text, title) {
+  const e = $("engine"); e.dataset.state = state; $("engineText").textContent = text; e.title = title || "";
+}
+function computeJS() { return JSON.parse(He3ModelJS.run(JSON.stringify(params))); }
+function computePy() {
+  const t0 = performance.now();
+  const out = JSON.parse(pyRun(JSON.stringify(params)));
+  lastPyMs = performance.now() - t0;
+  return out;
+}
+let pending = null;
+function changed(final) {
+  save();
+  // Instant preview from the JS port while dragging, as long as it reproduces the Python model.
+  if (!py || jsAgrees) show(computeJS(), py ? "preview" : null);
+  if (py && (final || !jsAgrees)) {
+    clearTimeout(pending);
+    pending = setTimeout(() => {
+      try { show(computePy(), "python"); }
+      catch (e) { showError("Python error: " + e.message); }
+    }, final ? 30 : 250);
+  }
+}
+
+function showError(msg) {
+  $("warnings").innerHTML = "";
+  const p = document.createElement("p"); p.textContent = msg; $("warnings").appendChild(p);
+}
+
+/* ---------------------------------------------------------------- formatting */
+const fmtPct = v => (v * 100).toFixed(1) + "%";
+function fmtTime(s) {
+  if (s == null || !isFinite(s)) return "–";
+  if (s < 90) return s.toFixed(s < 10 ? 1 : 0) + " s";
+  if (s < 5400) return (s / 60).toFixed(s < 600 ? 1 : 0) + " min";
+  if (s < 3 * 86400) return (s / 3600).toFixed(s < 36000 ? 2 : 1) + " h";
+  return (s / 86400).toFixed(1) + " d";
+}
+function fmtSci(v) {
+  if (!isFinite(v) || v === 0) return "0";
+  const e = Math.floor(Math.log10(Math.abs(v))), m = v / Math.pow(10, e);
+  return m.toFixed(2) + "×10" + String(e).split("").map(c => "⁰¹²³⁴⁵⁶⁷⁸⁹"[+c] || (c === "-" ? "⁻" : c)).join("");
+}
+function fmtmW(v) { const a = Math.abs(v); return a >= 1000 ? (v / 1000).toFixed(2) + " W" : a >= 10 ? v.toFixed(0) + " mW" : v.toFixed(1) + " mW"; }
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ---------------------------------------------------------------- results */
+let hoverIdx = null;
+function show(res, source) {
+  if (!res.ok) { showError((source === "python" ? "Python: " : "") + res.error); return; }
+  R = res;
+  hoverIdx = null;
+  const ratio = R.ss_pump > 0 ? R.ss_target / R.ss_pump : 0;
+  $("kPp").textContent = fmtPct(R.ss_pump);
+  $("kPt").textContent = fmtPct(R.ss_target);
+  $("kR").textContent = ratio.toFixed(2);
+  $("kPtS").textContent = "steady · 90% in " + fmtTime(R.t90_target_s);
+  $("kPpS").textContent = "steady, discharge on";
+
+  // exchange facts
+  const conv = params.mode === "loop";
+  const rows = [
+    ["Target exchange time N_t/G", fmtTime(R.tau_x_target_s)],
+    ["Pumping-cell exchange time N_p/G", fmtTime(R.tau_x_pump_s)],
+    ["Conductance G", fmtSci(R.G) + " /s"],
+    ["  by diffusion", fmtSci(R.G_diff) + " /s"],
+  ];
+  if (conv) {
+    rows.push(["  by circulation", fmtSci(R.G_conv) + " /s"]);
+    rows.push(["Loop flow", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"]);
+    rows.push(["Reynolds number, cold end", R.Re.toFixed(1)]);
+  }
+  rows.push(["Atoms: pumping / target cell", fmtSci(R.Np) + " / " + fmtSci(R.Nt)]);
+  rows.push(["Build-up time constants", fmtTime(R.times_s[0]) + ", " + fmtTime(R.times_s[1])]);
+  fillFacts($("xFacts"), rows);
+  const xr = R.tau_x_target_s / (params.T1t_h * 3600);
+  const xp = $("xPill");
+  if (xr < 0.1) { xp.className = "pill good"; xp.textContent = "Exchange not limiting"; }
+  else if (xr < 0.5) { xp.className = "pill warn"; xp.textContent = "Exchange costs " + Math.round(100 * xr / (1 + xr)) + "%"; }
+  else { xp.className = "pill bad"; xp.textContent = "Exchange-limited"; }
+
+  // polarization budget at steady state (discharge on)
+  const Np = R.Np, Nt = R.Nt, Pp = R.ss_pump, Pt = R.ss_target;
+  const prod = Np / params.T_op_s * (params.P_lim / 100 - Pp);
+  const parts = [
+    ["Target-cell relaxation", Nt * Pt / (params.T1t_h * 3600), css("--cold")],
+    ["Pumping-cell relaxation (discharge)", Np * Pp / params.T1p_on_s, css("--warm")],
+  ];
+  const tot = parts.reduce((s, p) => s + p[1], 0) || 1;
+  $("budget").innerHTML = parts.map(p => `<span style="width:${(100 * p[1] / tot).toFixed(2)}%;background:${p[2]}" title="${p[0]}"></span>`).join("");
+  $("blegend").innerHTML = parts.map(p => `<div><span><i style="background:${p[2]}"></i>${p[0]}</span><span class="mono">${(100 * p[1] / tot).toFixed(0)}%</span></div>`).join("") +
+    `<div><span class="mono" style="color:var(--muted)">MEOP output at steady state</span><span class="mono">${fmtSci(prod)} /s</span></div>`;
+
+  // heat
+  const h = R.heat_mW;
+  const hr = [["5 K stage (cell + cold clamps)", fmtmW(h.cold)]];
+  if (params.intercept) hr.push([`${params.T_int} K intercept`, fmtmW(h.intercept)]);
+  if (conv) hr.push(h.engine <= 0 ? ["Riser engine heater", fmtmW(-h.engine)] : [`Engine clamp removes, at ${params.T_engine} K`, fmtmW(h.engine)]);
+  hr.push(["Supplied at the warm end", fmtmW(-h.warm)]);
+  fillFacts($("hFacts"), hr);
+  const frac = h.cold / 2000;
+  const meter = $("hMeter");
+  meter.style.width = Math.min(100, Math.max(1, frac * 100)) + "%";
+  meter.style.background = frac > 1 ? css("--bad") : frac > 0.5 ? css("--warn") : css("--good");
+  const hp = $("hPill");
+  hp.className = "pill " + (frac > 1 ? "bad" : frac > 0.5 ? "warn" : "good");
+  hp.textContent = (frac * 100).toFixed(frac < 0.1 ? 1 : 0) + "% of PT420";
+
+  $("sealedHint").textContent = `Sealed-cell equivalent: M_ss ${fmtPct(R.sealed_Mss)}, build-up ${fmtTime(R.sealed_Tb_s)}, initial production ${fmtSci(R.production_atoms_s)} atoms/s.`;
+
+  const w = $("warnings"); w.innerHTML = "";
+  (R.warnings || []).forEach(t => { const p = document.createElement("p"); p.textContent = t; w.appendChild(p); });
+
+  if (source === "python") {
+    setEngine("python", "Python · Pyodide " + PYO_VER, `Last run ${lastPyMs.toFixed(0)} ms`);
+    const js = computeJS();
+    const keys = ["G", "tau_x_target_s", "ss_pump", "ss_target", "mdot_mg_h"];
+    const d = Math.max(...keys.map(k => Math.abs(R[k] - js[k]) / Math.max(Math.abs(R[k]), 1e-30)));
+    jsAgrees = d < 1e-9;
+    $("srcStatus").textContent = `Ran in Python, ${lastPyMs.toFixed(0)} ms · ` + (jsAgrees
+      ? `JavaScript port agrees${d < 1e-12 ? " to machine precision" : ""}`
+      : `JavaScript port differs by ${(d * 100).toPrecision(2)}%, so previews wait for Python`);
+  }
+  drawChart();
+}
+function fillFacts(dl, rows) {
+  dl.innerHTML = "";
+  rows.forEach(([k, v]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k.trim(); if (k.startsWith("  ")) dt.style.paddingLeft = "14px";
+    dd.textContent = v; dl.append(dt, dd);
+  });
+}
+
+/* ---------------------------------------------------------------- temperature colors */
+const TSTOPS = [[5, [43, 93, 166]], [12, [52, 138, 190]], [30, [94, 178, 172]], [80, [205, 192, 130]], [160, [226, 150, 78]], [300, [196, 71, 31]]];
+function tColor(T) {
+  const x = Math.log(Math.max(5, Math.min(300, T)));
+  for (let i = 1; i < TSTOPS.length; i++) {
+    const x1 = Math.log(TSTOPS[i][0]);
+    if (x <= x1) {
+      const x0 = Math.log(TSTOPS[i - 1][0]), f = (x - x0) / (x1 - x0), a = TSTOPS[i - 1][1], b = TSTOPS[i][1];
+      return `rgb(${a.map((c, j) => Math.round(c + f * (b[j] - c))).join(",")})`;
+    }
+  }
+  return "rgb(196,71,31)";
+}
+$("tbar").style.background = "linear-gradient(90deg," + [5, 8, 12, 20, 30, 50, 80, 120, 160, 220, 300].map(t => tColor(t)).join(",") + ")";
+
+/* ---------------------------------------------------------------- scene */
+const scene = $("scene"), sctx = scene.getContext("2d");
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let spins = { pump: [], target: [] }, dots = [];
+function fitCanvas(cv) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1), r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [r.width, r.height];
+}
+function sampleT(profile, s) {
+  if (!profile.length) return 300;
+  if (s <= profile[0][0]) return profile[0][1];
+  for (let i = 1; i < profile.length; i++) if (s <= profile[i][0]) {
+    const [s0, t0] = profile[i - 1], [s1, t1] = profile[i];
+    return s1 > s0 ? t0 + (t1 - t0) * (s - s0) / (s1 - s0) : t1;
+  }
+  return profile[profile.length - 1][1];
+}
+function currentP() { return R ? [R.ss_pump, R.ss_target] : [0, 0]; }   // schematic shows steady state, like the cards
+function updateSpins(arr, n, P, rate) {
+  while (arr.length < n) arr.push(Math.random() < 0.5 ? 1 : -1);
+  arr.length = n;
+  const want = Math.round(n * (1 + P) / 2);
+  let up = arr.reduce((s, v) => s + (v > 0), 0);
+  const flips = rate == null ? n : Math.max(1, Math.round(n * rate));
+  for (let k = 0; k < flips; k++) {
+    const i = (Math.random() * n) | 0;
+    if (up < want && arr[i] < 0) { arr[i] = 1; up++; }
+    else if (up > want && arr[i] > 0) { arr[i] = -1; up--; }
+    else if (rate != null && Math.random() < 0.15) {        // thermal reshuffle keeps it lively
+      const j = (Math.random() * n) | 0;
+      if (arr[i] !== arr[j]) { const t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+    }
+  }
+}
+function layout(W, H) {
+  const cellW = Math.min(W * 0.6, 360), cx = Math.min(W * 0.44, W / 2 - 10);
+  const pump = { x: cx - cellW / 2, y: 40, w: cellW, h: 80 };
+  const target = { x: cx - cellW / 2, y: H - 44 - 100, w: cellW, h: 100 };
+  const spread = Math.min(70, cellW * 0.22);
+  const legX = params.mode === "loop" ? [cx - spread, cx + spread] : [cx];
+  return { pump, target, cx, legX, y0: pump.y + pump.h, y1: target.y };
+}
+function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col) {
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, isMetal ? 6 : r.h / 2.4);
+  ctx.fillStyle = isMetal ? col.metal : col.glass; ctx.fill();
+  ctx.lineWidth = isMetal ? 1.5 : 1.25; ctx.strokeStyle = isMetal ? col.muted : col.line; ctx.stroke();
+  // spins in the left part
+  const padX = isMetal ? 14 : r.h / 2.6, area = { x: r.x + padX, y: r.y + 12, w: r.w * 0.62 - padX, h: r.h - 24 };
+  const cols = Math.max(4, Math.floor(area.w / 14)), rows = Math.max(2, Math.floor(area.h / 17));
+  const n = cols * rows;
+  updateSpins(spinsArr, n, P, reduceMotion ? null : 0.06);
+  const dx = area.w / cols, dy = area.h / rows;
+  for (let i = 0; i < n; i++) {
+    const c = i % cols, rr = (i / cols) | 0, x = area.x + dx * (c + 0.5), y = area.y + dy * (rr + 0.5), up = spinsArr[i] > 0;
+    ctx.strokeStyle = up ? color : col.muted; ctx.globalAlpha = up ? 0.95 : 0.4; ctx.lineWidth = 1.5;
+    const L = Math.min(6, dy * 0.38), s = up ? -1 : 1;
+    ctx.beginPath(); ctx.moveTo(x, y - s * L); ctx.lineTo(x, y + s * L);
+    ctx.moveTo(x - 3, y + s * (L - 3.2)); ctx.lineTo(x, y + s * L); ctx.lineTo(x + 3, y + s * (L - 3.2)); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  // readout
+  ctx.fillStyle = color; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.font = `500 ${Math.min(26, r.w * 0.075)}px ${css("--font-mono")}`;
+  ctx.fillText((P * 100).toFixed(1) + "%", r.x + r.w - (isMetal ? 14 : r.h / 3), r.y + r.h / 2);
+  ctx.restore();
+  ctx.fillStyle = col.muted; ctx.font = `600 13px ${css("--font-display")}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillText(label, r.x + 4, isMetal ? r.y + r.h + 18 : r.y - 10);
+}
+function drawScene(dtSec) {
+  const [W, H] = fitCanvas(scene), ctx = sctx;
+  ctx.clearRect(0, 0, W, H);
+  if (!R) return;
+  const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), glass: css("--glass"), metal: css("--metal"), panel: css("--panel"), accent: css("--accent") };
+  const L = layout(W, H), Hcm = params.length_cm, span = L.y1 - L.y0;
+  const yOf = s => L.y1 - (s / Hcm) * span;
+  const [Pp, Pt] = currentP();
+
+  // ruler
+  ctx.strokeStyle = col.line; ctx.fillStyle = col.muted; ctx.lineWidth = 1; ctx.font = `11px ${css("--font-mono")}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const rx = 4; ctx.beginPath(); ctx.moveTo(rx + 26, L.y0); ctx.lineTo(rx + 26, L.y1); ctx.stroke();
+  const stepCm = Hcm <= 6 ? 1 : Hcm <= 15 ? 2 : Hcm <= 30 ? 5 : 10;
+  for (let s = 0; s <= Hcm + 1e-9; s += stepCm) { const y = yOf(s); ctx.beginPath(); ctx.moveTo(rx + 22, y); ctx.lineTo(rx + 30, y); ctx.stroke(); ctx.fillText(String(s), rx, y); }
+  ctx.fillText("cm", rx, L.y0 - 14);
+
+  // supply line
+  const py0 = L.pump.y + L.pump.h / 2, sx0 = L.pump.x + L.pump.w, sx1 = Math.min(W - 26, sx0 + Math.max(40, (W - sx0) * 0.5));
+  ctx.strokeStyle = col.muted; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx0, py0); ctx.lineTo(sx1 - 9, py0); ctx.moveTo(sx1 + 9, py0); ctx.lineTo(Math.min(W - 6, sx1 + 30), py0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx1 - 9, py0 - 7); ctx.lineTo(sx1 + 9, py0 + 7); ctx.lineTo(sx1 + 9, py0 - 7); ctx.lineTo(sx1 - 9, py0 + 7); ctx.closePath();
+  ctx.fillStyle = col.ink; ctx.fill(); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = col.muted; ctx.font = `600 12px ${css("--font-display")}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillText("supply", sx1, py0 - 14); ctx.font = `11px ${css("--font-mono")}`;
+  ctx.fillText("closed", sx1, py0 + 22);
+
+  // legs
+  const legs = R.legs.slice(0, L.legX.length);
+  legs.forEach((leg, li) => {
+    const x = L.legX[li], tw = Math.max(7, Math.min(14, params.id_mm * 1.1)), prof = leg.profile;
+    // tube glass outline
+    ctx.fillStyle = col.line; ctx.fillRect(x - tw / 2 - 2, L.y0, tw + 4, span);
+    for (let y = L.y0; y < L.y1; y += 2) {
+      const s = (L.y1 - y) / span * Hcm;
+      ctx.fillStyle = tColor(sampleT(prof, s)); ctx.fillRect(x - tw / 2, y, tw, 2.2);
+    }
+    // nodes
+    let s0 = 0;
+    leg.nodes.forEach((nd, ni) => {
+      const [Tn, cl, kind] = nd;
+      const yA = yOf(s0), yB = yOf(s0 + cl), side = li === 0 && L.legX.length > 1 ? -1 : 1;
+      if (kind === "cold" && cl > 0) {
+        ctx.fillStyle = col.cold; ctx.globalAlpha = 0.28; ctx.fillRect(x - tw / 2 - 7, yB, tw + 14, yA - yB); ctx.globalAlpha = 1;
+        ctx.strokeStyle = col.cold; ctx.lineWidth = 1.2; ctx.strokeRect(x - tw / 2 - 7, yB, tw + 14, yA - yB);
+        label(ctx, x + side * (tw / 2 + 12), (yA + yB) / 2, `${Tn} K clamp`, side, col);
+      } else if (kind === "engine" && cl > 0) {
+        ctx.strokeStyle = col.warm; ctx.lineWidth = 1.5; ctx.beginPath();
+        const n = Math.max(3, Math.round((yA - yB) / 6));
+        for (let k = 0; k <= n; k++) { const yy = yA - (yA - yB) * k / n, xx = x + (k % 2 ? 1 : -1) * (tw / 2 + 6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
+        ctx.stroke();
+        label(ctx, x + side * (tw / 2 + 12), (yA + yB) / 2, `engine ${Tn} K`, side, col);
+      } else if (kind === "intercept") {
+        ctx.fillStyle = col.ink; ctx.fillRect(x - tw / 2 - 8, yA - 2.5, tw + 16, 5);
+        label(ctx, x + side * (tw / 2 + 12), yA, `${Tn} K intercept`, side, col);
+      }
+      s0 += cl + (ni < leg.free_cm.length ? leg.free_cm[ni] : 0);
+    });
+    if (L.legX.length > 1) {
+      ctx.save(); ctx.fillStyle = col.muted; ctx.font = `600 12px ${css("--font-display")}`; ctx.textAlign = "center";
+      ctx.textAlign = li === 0 ? "right" : "left"; ctx.textBaseline = "middle";
+      ctx.fillText(li === 0 ? "riser ↑" : "downcomer ↓", x + (li === 0 ? -1 : 1) * (Math.max(7, Math.min(14, params.id_mm * 1.1)) / 2 + 10), L.y0 + 16);
+      ctx.restore();
+    }
+  });
+
+  // flow / diffusion tracers
+  const loop = params.mode === "loop" && Math.abs(R.mdot_mg_h) > 0.01;
+  const nPer = 14;
+  if (dots.length !== legs.length * nPer) { dots = []; legs.forEach((_, li) => { for (let k = 0; k < nPer; k++) dots.push({ li, s: Math.random() * Hcm }); }); }
+  const vis = loop ? Math.min(1.2, 0.25 + Math.log10(1 + Math.abs(R.mdot_mg_h)) / 3) : 0;
+  dots.forEach(d => {
+    const leg = legs[d.li]; if (!leg) return;
+    const T = sampleT(leg.profile, d.s);
+    if (!reduceMotion && dtSec > 0) {
+      if (loop) {
+        const dir = (d.li === 0 ? 1 : -1) * Math.sign(R.mdot_mg_h);
+        d.s += dir * vis * Hcm * 0.35 * dtSec * (0.08 + 0.92 * T / 300);
+        if (d.s > Hcm) d.s -= Hcm; if (d.s < 0) d.s += Hcm;
+      } else {
+        d.s += (Math.random() - 0.5) * Hcm * 0.06 * Math.pow(T / 300, 0.84) * Math.sqrt(dtSec * 60);
+        d.s = Math.max(0, Math.min(Hcm, d.s));
+      }
+    }
+    ctx.fillStyle = col.ink; ctx.globalAlpha = 0.75;
+    ctx.beginPath(); ctx.arc(L.legX[d.li], yOf(d.s), 2.1, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+  });
+
+  drawCell(ctx, L.pump, `Pumping cell · ${params.Th} K · ${params.V_pump_cc} cm³`, Pp, spins.pump, col.warm, false, col);
+  drawCell(ctx, L.target, `Target cell · ${params.Tc} K · ${params.V_target_cc} cm³`, Pt, spins.target, col.cold, true, col);
+}
+function label(ctx, x, y, text, side, col) {
+  ctx.save(); ctx.fillStyle = col.muted; ctx.font = `11.5px ${css("--font-mono")}`;
+  ctx.textAlign = side < 0 ? "right" : "left"; ctx.textBaseline = "middle"; ctx.fillText(text, x, y); ctx.restore();
+}
+
+/* ---------------------------------------------------------------- chart */
+const chart = $("chart"), cctx = chart.getContext("2d");
+let chartGeom = null;
+function drawChart() {
+  const [W, H] = fitCanvas(chart), ctx = cctx;
+  ctx.clearRect(0, 0, W, H);
+  if (!R) return;
+  const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold") };
+  const m = { l: 44, r: 14, t: 10, b: 30 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const tMax = R.t_h[R.t_h.length - 1];
+  const yMaxRaw = Math.max(0.05, ...R.P_pump, ...R.P_target) * 100;
+  const yStep = yMaxRaw > 40 ? 10 : yMaxRaw > 15 ? 5 : yMaxRaw > 6 ? 2 : 1;
+  const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const X = t => m.l + (t / tMax) * pw, Y = v => m.t + ph - (v * 100 / yMax) * ph;
+  chartGeom = { m, pw, tMax };
+  ctx.font = `11px ${css("--font-mono")}`; ctx.fillStyle = col.muted; ctx.strokeStyle = col.line; ctx.lineWidth = 1;
+  // discharge-off shading
+  if (R.t_on_h < tMax) {
+    ctx.fillStyle = col.line; ctx.globalAlpha = 0.35; ctx.fillRect(X(R.t_on_h), m.t, X(tMax) - X(R.t_on_h), ph); ctx.globalAlpha = 1;
+    ctx.fillStyle = col.muted; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("discharge off", X(R.t_on_h) + 6, m.t + 4);
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = 0; v <= yMax + 1e-9; v += yStep) {
+    const y = Y(v / 100); ctx.strokeStyle = col.line; ctx.globalAlpha = v === 0 ? 1 : 0.55;
+    ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = col.muted; ctx.fillText(v + "%", m.l - 6, y);
+  }
+  const niceT = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 6, 12, 24];
+  const tStep = niceT.find(s => tMax / s <= 8) || 24;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let t = 0; t <= tMax + 1e-9; t += tStep) ctx.fillText((tStep < 1 ? t.toFixed(2).replace(/0$/, "") : t) + " h", X(t), m.t + ph + 8);
+  // steady-state guides
+  [[R.ss_pump, col.warm], [R.ss_target, col.cold]].forEach(([v, c]) => {
+    if (v * 100 > yMax) return;
+    ctx.strokeStyle = c; ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(m.l, Y(v)); ctx.lineTo(m.l + pw, Y(v)); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
+  [[R.P_pump, col.warm], [R.P_target, col.cold]].forEach(([arr, c]) => {
+    ctx.strokeStyle = c; ctx.lineWidth = 2.2; ctx.beginPath();
+    arr.forEach((v, i) => { const x = X(R.t_h[i]), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  });
+  // hover readout
+  const tr = $("tread");
+  if (hoverIdx == null || hoverIdx >= R.t_h.length) { tr.textContent = "Hover or tap the chart to read values"; return; }
+  const i = hoverIdx, xp = X(R.t_h[i]);
+  ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xp, m.t); ctx.lineTo(xp, m.t + ph); ctx.stroke(); ctx.globalAlpha = 1;
+  [[R.P_pump[i], col.warm], [R.P_target[i], col.cold]].forEach(([v, c]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(xp, Y(v), 4, 0, 7); ctx.fill(); });
+  const th = R.t_h[i];
+  tr.innerHTML = "t = " + (th < 1 ? (th * 60).toFixed(0) + " min" : th.toFixed(2) + " h") +
+    ` · pump <b style="color:var(--warm)">${(R.P_pump[i] * 100).toFixed(1)}%</b>` +
+    ` · target <b style="color:var(--cold)">${(R.P_target[i] * 100).toFixed(1)}%</b>`;
+}
+function pick(ev) {
+  if (!R || !chartGeom) return;
+  const r = chart.getBoundingClientRect(), x = ev.clientX - r.left;
+  const t = Math.max(0, Math.min(1, (x - chartGeom.m.l) / chartGeom.pw)) * chartGeom.tMax;
+  let best = 0; R.t_h.forEach((tt, k) => { if (Math.abs(tt - t) < Math.abs(R.t_h[best] - t)) best = k; });
+  if (best !== hoverIdx) { hoverIdx = best; drawChart(); }
+}
+chart.addEventListener("pointermove", pick);
+chart.addEventListener("pointerdown", pick);
+chart.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { hoverIdx = null; drawChart(); } });
+
+/* ---------------------------------------------------------------- animation (tracers and spins only) */
+let lastTs = null;
+function frame(ts) {
+  const dt = lastTs == null ? 0 : Math.min(0.1, (ts - lastTs) / 1000); lastTs = ts;
+  drawScene(dt);
+  requestAnimationFrame(frame);
+}
+window.addEventListener("resize", () => { drawChart(); });
+try { new MutationObserver(() => drawChart()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawChart());
+
+/* ---------------------------------------------------------------- source panel */
+const codeEl = $("code").firstElementChild;
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const TRIPLE_SQ = "'".repeat(3);
+const HL_RE = new RegExp(
+  '("""[\\s\\S]*?"""|' + TRIPLE_SQ + "[\\s\\S]*?" + TRIPLE_SQ + ")" +       // docstrings
+  "|(#[^\\n]*)" +                                                              // comments
+  '|("(?:[^"\\\\\\n]|\\\\.)*"|' + "'(?:[^'\\\\\\n]|\\\\.)*')", "g");          // string literals
+function highlight(src) {
+  let out = "", last = 0, m;
+  HL_RE.lastIndex = 0;
+  while ((m = HL_RE.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    out += (m[1] || m[2]) ? `<span class="tc">${esc(m[0])}</span>` : `<span class="ts">${esc(m[0])}</span>`;
+    last = HL_RE.lastIndex;
+  }
+  return out + esc(src.slice(last));
+}
+async function loadModelSource() {
+  const inline = document.getElementById("model-py");
+  if (inline && inline.textContent.trim()) return inline.textContent.replace(/^\n/, "");
+  const r = await fetch("he3_model.py", { cache: "no-cache" });
+  if (!r.ok) throw new Error("he3_model.py was not found next to the page");
+  return await r.text();
+}
+$("copyCode").addEventListener("click", async () => {
+  const btn = $("copyCode");
+  try { await navigator.clipboard.writeText(MODEL_PY); btn.textContent = "Copied"; }
+  catch (e) {
+    const sel = window.getSelection(), range = document.createRange();
+    range.selectNodeContents(codeEl); sel.removeAllRanges(); sel.addRange(range);
+    btn.textContent = "Selected; press Ctrl+C";
+  }
+  setTimeout(() => { btn.textContent = "Copy"; }, 1800);
+});
+
+/* ---------------------------------------------------------------- boot */
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous";
+    s.onload = () => res(); s.onerror = () => rej(new Error("could not load " + src));
+    document.head.appendChild(s);
+  });
+}
+const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(what + " timed out")), ms))]);
+async function bootPython() {
+  setEngine("loading", "Loading Python…");
+  const errors = [];
+  try { MODEL_PY = await loadModelSource(); codeEl.innerHTML = highlight(MODEL_PY); }
+  catch (e) {
+    errors.push(e.message);
+    codeEl.textContent = location.protocol === "file:"
+      ? "Open this page through a web server (for example python3 -m http.server) so it can read he3_model.py."
+      : "Could not read he3_model.py: " + e.message;
+  }
+  if (!MODEL_PY) return fallBack(errors);
+  try {
+    if (!SELF_HOSTED) { if (typeof window.loadPyodide !== "function") await loadScript(CDN_FULL + "pyodide.js"); }
+    else for (const f of ["pyodide.asm.js", "pyodide.js"]) {
+      const ready = () => f === "pyodide.js" ? typeof window.loadPyodide === "function" : typeof window._createPyodideModule === "function";
+      for (const base of [CDN_NPM, new URL("pyodide/", location.href).href]) {
+        if (ready()) break;
+        try { await loadScript(base + f); } catch (e) { errors.push(e.message); }
+      }
+    }
+  } catch (e) { errors.push(e.message); }
+  if (typeof window.loadPyodide === "function") {
+    const SELF = new URL("pyodide/", location.href).href;
+    for (const indexURL of SELF_HOSTED ? [SELF, CDN_FULL] : [CDN_FULL]) {
+      const origFetch = window.fetch;
+      try {
+        if (indexURL === SELF) {
+          // The stdlib archive is published as base64 text; answer Pyodide's request for it from memory.
+          const r = await origFetch(SELF + "python_stdlib.zip.b64.txt");
+          if (!r.ok) throw new Error("stdlib not published alongside the page");
+          const s = atob((await r.text()).trim()), bin = new Uint8Array(s.length);
+          for (let i = 0; i < s.length; i++) bin[i] = s.charCodeAt(i);
+          window.fetch = function (input, init) {
+            const u = typeof input === "string" ? input : (input && (input.href || input.url)) || "";
+            if (u.endsWith("python_stdlib.zip")) return Promise.resolve(new Response(bin, { headers: { "Content-Type": "application/zip" } }));
+            return origFetch.apply(this, arguments);
+          };
+        }
+        const inst = await withTimeout(window.loadPyodide({ indexURL, stdout: () => {}, stderr: () => {} }), 60000, "Pyodide start");
+        window.fetch = origFetch;
+        inst.runPython(MODEL_PY);
+        py = inst; pyRun = py.globals.get("run");
+        break;
+      } catch (e) { window.fetch = origFetch; errors.push(indexURL + ": " + (e.message || e)); }
+    }
+  }
+  if (py) {
+    try { show(computePy(), "python"); }
+    catch (e) { py = null; errors.push("model error: " + (e.message || e)); fallBack(errors); }
+  } else fallBack(errors);
+}
+function fallBack(errors) {
+  setEngine("js", "JavaScript port", "Python could not start here: " + errors.join("; "));
+  $("srcStatus").textContent = "Python could not start here, so the page runs its JavaScript port of this model.";
+}
+
+syncInputs();
+show(computeJS(), null);
+requestAnimationFrame(frame);
+bootPython();
+})();
+</script>
+</body>
+</html>
