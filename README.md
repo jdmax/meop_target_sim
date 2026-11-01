@@ -4,6 +4,8 @@ Interactive model of a polarized ³He target with a warm MEOP pumping cell (~300
 
 The physics runs in Python ([Pyodide](https://pyodide.org) 0.26.4, loaded from the jsDelivr CDN) directly in the browser. Nothing is computed on a server.
 
+It is published at **<https://jdmax.github.io/meop_target_sim/>**.
+
 ## What it models
 
 - **Tube temperature profiles.** Glass-wall and gas conduction along each leg, including the enthalpy carried by any net gas flow. Clamped sections (cold clamp, riser "engine", intercept) are isothermal; the heat each one removes or supplies is reported.
@@ -25,7 +27,7 @@ The physics runs in Python ([Pyodide](https://pyodide.org) 0.26.4, loaded from t
 | `index.html` | The page: controls, schematic, polarization trace, source listing |
 | `he3_model.py` | The model. The page fetches this file and runs it in Pyodide; its listing is shown on the page |
 | `he3_model.js` | Line-for-line JavaScript port, used for instant previews while a slider is dragged and as a fallback if Python can't start |
-| `.nojekyll` | Tells GitHub Pages to serve the files as-is |
+| `.github/workflows/pages.yml` | Deploys the three site files to GitHub Pages on each push to `main` |
 
 ## Editing the model
 
