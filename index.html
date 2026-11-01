@@ -307,7 +307,8 @@ details.src[open] > summary h2::before { content: "▾ "; }
 </div>
 
 <script type="text/x-python" id="model-py"></script>
-<script src="he3_model.js"></script>
+<script src="he3_model.js?v=dev"></script>  <!-- the deploy workflow stamps the commit here -->
+
 <script>
 (function () {
 "use strict";
@@ -423,6 +424,11 @@ function setEngine(state, text, title) {
   const e = $("engine"); e.dataset.state = state; $("engineText").textContent = text; e.title = title || "";
 }
 function computeJS() { return JSON.parse(He3ModelJS.run(JSON.stringify(params))); }
+// A stale cached he3_model.js can return an older result shape; never let that block Python.
+function previewJS(source) {
+  try { show(computeJS(), source); }
+  catch (e) { jsAgrees = false; showError("JavaScript preview failed (" + e.message + "), so the page waits for Python."); }
+}
 function computePy() {
   const t0 = performance.now();
   const out = JSON.parse(pyRun(JSON.stringify(params)));
@@ -433,7 +439,7 @@ let pending = null;
 function changed(final) {
   save();
   // Instant preview from the JS port while dragging, as long as it reproduces the Python model.
-  if (!py || jsAgrees) show(computeJS(), py ? "preview" : null);
+  if (!py || jsAgrees) previewJS(py ? "preview" : null);
   if (py && (final || !jsAgrees)) {
     clearTimeout(pending);
     pending = setTimeout(() => {
@@ -557,9 +563,12 @@ function show(res, source) {
 
   if (source === "python") {
     setEngine("python", "Python · Pyodide " + PYO_VER, `Last run ${lastPyMs.toFixed(0)} ms`);
-    const js = computeJS();
-    const keys = ["G", "tau_x_target_s", "ss_pump", "ss_target", "mdot_mg_h"];
-    const d = Math.max(...keys.map(k => Math.abs(R[k] - js[k]) / Math.max(Math.abs(R[k]), 1e-30)));
+    let d = Infinity;
+    try {
+      const js = computeJS();
+      const keys = ["G", "tau_x_target_s", "ss_pump", "ss_target", "mdot_mg_h"];
+      d = Math.max(...keys.map(k => Math.abs(R[k] - js[k]) / Math.max(Math.abs(R[k]), 1e-30)));
+    } catch (e) {}
     jsAgrees = d < 1e-9;
     $("srcStatus").textContent = `Ran in Python, ${lastPyMs.toFixed(0)} ms · ` + (jsAgrees
       ? `JavaScript port agrees${d < 1e-12 ? " to machine precision" : ""}`
@@ -970,7 +979,7 @@ function fallBack(errors) {
 }
 
 syncInputs();
-show(computeJS(), null);
+previewJS(null);
 requestAnimationFrame(frame);
 bootPython();
 })();
