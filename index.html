@@ -191,7 +191,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
       <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
       <fieldset id="fs-loop"><legend>Cold-end engine</legend></fieldset>
       <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
-      <fieldset id="fs-pump"><legend>Pumping and relaxation</legend></fieldset>
+      <fieldset id="fs-pump"><legend>Pumping (sealed-cell values) and relaxation</legend></fieldset>
     </aside>
 
     <main class="main">
@@ -220,7 +220,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
           </div>
 
           <div class="card">
-            <div class="section-head"><h2>Where the pumped polarization goes</h2></div>
+            <div class="section-head"><h2>Why the target sits below M_ss</h2></div>
             <div class="budget" id="budget"></div>
             <div class="blegend" id="blegend"></div>
           </div>
@@ -284,7 +284,7 @@ const DEFAULTS = {
   engine_cm: 2, gap_cm: 0.5, T_engine: 25,
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
-  T_op_s: 240, P_lim: 80, T1p_on_s: 400, T1p_off_h: 1, T1t_h: 10,
+  M_ss: 50, T_b_s: 150, T1p_off_h: 1, T1t_h: 10,
   run_h: 24, on_h: 24,
 };
 const DEFS = [
@@ -301,9 +301,8 @@ const DEFS = [
   { fs: "int", key: "intercept", label: "Intercept on", toggle: true },
   { fs: "int", key: "T_int", label: "Intercept temperature", unit: "K", min: 15, max: 120, dp: 0 },
   { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 39, dp: 1 },
-  { fs: "pump", key: "T_op_s", label: "Optical pumping time 1/Γ_op", unit: "s", min: 10, max: 5000, log: true, dp: 0 },
-  { fs: "pump", key: "P_lim", label: "Optical pumping limit", unit: "%", min: 5, max: 98, dp: 0 },
-  { fs: "pump", key: "T1p_on_s", label: "Pump-cell T₁, discharge on", unit: "s", min: 20, max: 20000, log: true, dp: 0 },
+  { fs: "pump", key: "M_ss", label: "Sealed-cell steady polarization M_ss", unit: "%", min: 5, max: 95, dp: 1 },
+  { fs: "pump", key: "T_b_s", label: "Sealed-cell build-up time T_b", unit: "s", min: 5, max: 5000, log: true, dp: 0 },
   { fs: "pump", key: "T1t_h", label: "Target-cell T₁", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
   { fs: "pump", key: "run_h", label: "Run length", unit: "h", min: 0.25, max: 96, log: true, dp: 2 },
   { fs: "pump", key: "on_h", label: "Discharge on for", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
@@ -462,17 +461,16 @@ function show(res, source) {
   else if (xr < 0.5) { xp.className = "pill warn"; xp.textContent = "Exchange costs " + Math.round(100 * xr / (1 + xr)) + "%"; }
   else { xp.className = "pill bad"; xp.textContent = "Exchange-limited"; }
 
-  // polarization budget at steady state (discharge on)
-  const Np = R.Np, Nt = R.Nt, Pp = R.ss_pump, Pt = R.ss_target;
-  const prod = Np / params.T_op_s * (params.P_lim / 100 - Pp);
+  // steady state: Pt = Mss / (1 + a + b); split M_ss into what the target keeps and what each limit costs
+  const a = R.loss_exchange, b = R.loss_capacity, den = 1 + a + b, Mss = params.M_ss;
   const parts = [
-    ["Target-cell relaxation", Nt * Pt / (params.T1t_h * 3600), css("--cold")],
-    ["Pumping-cell relaxation (discharge)", Np * Pp / params.T1p_on_s, css("--warm")],
+    ["Reached in the target", 1 / den, css("--cold")],
+    [`MEOP can't keep up with target relaxation (b = ${b.toPrecision(2)})`, b / den, css("--warm")],
+    [`Exchange too slow (a = ${a.toPrecision(2)})`, a / den, css("--muted")],
   ];
-  const tot = parts.reduce((s, p) => s + p[1], 0) || 1;
-  $("budget").innerHTML = parts.map(p => `<span style="width:${(100 * p[1] / tot).toFixed(2)}%;background:${p[2]}" title="${p[0]}"></span>`).join("");
-  $("blegend").innerHTML = parts.map(p => `<div><span><i style="background:${p[2]}"></i>${p[0]}</span><span class="mono">${(100 * p[1] / tot).toFixed(0)}%</span></div>`).join("") +
-    `<div><span class="mono" style="color:var(--muted)">MEOP output at steady state</span><span class="mono">${fmtSci(prod)} /s</span></div>`;
+  $("budget").innerHTML = parts.map(p => `<span style="width:${(100 * p[1]).toFixed(2)}%;background:${p[2]}" title="${p[0]}"></span>`).join("");
+  $("blegend").innerHTML = parts.map(p => `<div><span><i style="background:${p[2]}"></i>${p[0]}</span><span class="mono">${(Mss * p[1]).toFixed(1)}%</span></div>`).join("") +
+    `<div><span class="mono" style="color:var(--muted)">a = τ_x/T₁t, b = (N_t/N_p)·T_b/T₁t; P_t = M_ss/(1+a+b)</span></div>`;
 
   // heat
   const h = R.heat_mW;
@@ -489,7 +487,7 @@ function show(res, source) {
   hp.className = "pill " + (frac > 1 ? "bad" : frac > 0.5 ? "warn" : "good");
   hp.textContent = (frac * 100).toFixed(frac < 0.1 ? 1 : 0) + "% of PT420";
 
-  $("sealedHint").textContent = `Sealed-cell equivalent: M_ss ${fmtPct(R.sealed_Mss)}, build-up ${fmtTime(R.sealed_Tb_s)}, initial production ${fmtSci(R.production_atoms_s)} atoms/s.`;
+  $("sealedHint").textContent = `Fit M(t) = M_ss(1 − e^(−t/T_b)) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s.`;
 
   const w = $("warnings"); w.innerHTML = "";
   (R.warnings || []).forEach(t => { const p = document.createElement("p"); p.textContent = t; w.appendChild(p); });

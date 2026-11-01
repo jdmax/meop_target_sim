@@ -224,10 +224,10 @@
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
     const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
-    const g_op = 1 / P.T_op_s, g_rp = 1 / P.T1p_on_s, g_rp_off = 1 / (P.T1p_off_h * 3600), g_t = 1 / (P.T1t_h * 3600);
-    const kp = G / Np, kt = G / Nt, Plim = P.P_lim / 100;
-    const mat = (gop, grp) => [[[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Plim, 0]];
-    const rates = { on: mat(g_op, g_rp), off: mat(0, g_rp_off) };
+    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_rp_off = 1 / (P.T1p_off_h * 3600), g_t = 1 / (P.T1t_h * 3600);
+    const kp = G / Np, kt = G / Nt;
+    const mat = (gop, grp) => [[[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Mss, 0]];
+    const rates = { on: mat(g_b, 0), off: mat(0, g_rp_off) };
     const t_end = P.run_h * 3600, t_on = Math.min(P.on_h, P.run_h) * 3600;
     const [t, pp, pt, ss_on] = evolve(rates, [0, 0], t_on, t_end, 361);
     let t90 = null; const target = 0.9 * ss_on[1];
@@ -247,7 +247,8 @@
       heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])),
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(rates.on[0]), t90_target_s: t90,
-      sealed_Mss: g_op * Plim / (g_op + g_rp), sealed_Tb_s: 1 / (g_op + g_rp), production_atoms_s: g_op * Plim * Np,
+      production_atoms_s: g_b * Mss * Np,
+      loss_exchange: (Nt / G) * g_t, loss_capacity: (Nt / Np) * P.T_b_s * g_t,
       t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, t_on_h: t_on / 3600, warnings,
     };
   }

@@ -11,12 +11,15 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 - **Tube temperature profiles.** Glass-wall and gas conduction along each leg, including the enthalpy carried by any net gas flow. Clamped sections (cold clamp, riser "engine", intercept) are isothermal; the heat each one removes or supplies is reported.
 - **Gas exchange by diffusion.** Polarization diffuses at uniform pressure with conductance `G = A / ∫ ds/(n D)`. Because `n·D ∝ T^0.68` regardless of pressure, the cold end dominates.
 - **Thermosiphon loop.** Buoyancy from the riser/downcomer density difference is balanced against laminar friction. The temperature profiles are re-solved for each trial flow.
-- **Polarization dynamics.** An exact solution of the two-cell rate equations, with optical pumping, discharge-on and discharge-off relaxation in the pumping cell, and target relaxation:
+- **Polarization dynamics.** An exact solution of the two-cell rate equations. The pumping cell is described by the steady polarization `Mss` and build-up time `Tb` measured in a sealed cell at the operating pressure and field, from a fit to `M(t) = Mss (1 − e^(−t/Tb))`:
 
   ```
-  dPp/dt = Γop (Plim − Pp) − Pp/T1p − (G/Np)(Pp − Pt)
+  dPp/dt = (Mss − Pp)/Tb − (G/Np)(Pp − Pt)        discharge on
+  dPp/dt = −Pp/T1p,off   − (G/Np)(Pp − Pt)        discharge off
   dPt/dt = (G/Nt)(Pp − Pt) − Pt/T1t
   ```
+
+  In steady state the target reaches `Pt = Mss / (1 + a + b)`, where `a = τx/T1t` (exchange too slow, τx = Nt/G) and `b = (Nt/Np)(Tb/T1t)` (MEOP can't keep up with target relaxation).
 
 **Not modeled:** radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
 

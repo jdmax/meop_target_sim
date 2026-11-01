@@ -17,9 +17,14 @@ Transport (per leg, 1-D along the tube):
     temperature profiles re-solved for each trial flow.
 
 Polarization (exact solution of the linear 2x2 system, piecewise in time):
-  dPp/dt = Gop (Plim - Pp) - Pp/T1p - (G/Np)(Pp - Pt)
+  dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          discharge on
+  dPp/dt = -Pp/T1p_off  - (G/Np)(Pp - Pt)           discharge off
   dPt/dt = (G/Nt)(Pp - Pt) - Pt/T1t
-With the discharge off, Gop = 0 and T1p becomes the discharge-off value.
+Mss and Tb are the steady polarization and build-up time measured in a sealed
+cell at the operating pressure and field (Nikiel et al.: dM/dt = Gop (Mss - M)).
+In steady state the target reaches Pt = Mss / (1 + a + b), with
+  a = tau_x / T1t            exchange too slow        (tau_x = Nt/G)
+  b = (Nt/Np) (Tb / T1t)     MEOP can't keep up with target relaxation.
 
 Entry point: run(params_json) -> result_json. Edit the property functions freely.
 """
@@ -418,17 +423,16 @@ def compute(P):
         for kind, Tn, q in s["heats"]:
             heat[kind] += q
 
-    g_op = 1.0 / P["T_op_s"]
-    g_rp = 1.0 / P["T1p_on_s"]
+    Mss = P["M_ss"] / 100.0
+    g_b = 1.0 / P["T_b_s"]
     g_rp_off = 1.0 / (P["T1p_off_h"] * 3600.0)
     g_t = 1.0 / (P["T1t_h"] * 3600.0)
     kp, kt = G / Np, G / Nt
-    Plim = P["P_lim"] / 100.0
 
     def mat(gop, grp):
-        return ([[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Plim, 0.0])
+        return ([[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Mss, 0.0])
 
-    rates = dict(on=mat(g_op, g_rp), off=mat(0.0, g_rp_off))
+    rates = dict(on=mat(g_b, 0.0), off=mat(0.0, g_rp_off))
     t_end = P["run_h"] * 3600.0
     t_on = min(P["on_h"], P["run_h"]) * 3600.0
     t, pp, pt, ss_on = evolve(rates, [0.0, 0.0], t_on, t_end, 361)
@@ -479,8 +483,8 @@ def compute(P):
         ss_pump=ss_on[0], ss_target=ss_on[1],
         times_s=eig_times(A_on),
         t90_target_s=t90,
-        sealed_Mss=g_op * Plim / (g_op + g_rp), sealed_Tb_s=1.0 / (g_op + g_rp),
-        production_atoms_s=g_op * Plim * Np,
+        production_atoms_s=g_b * Mss * Np,
+        loss_exchange=(Nt / G) * g_t, loss_capacity=(Nt / Np) * P["T_b_s"] * g_t,
         t_h=[x / 3600.0 for x in t], P_pump=pp, P_target=pt,
         t_on_h=t_on / 3600.0,
         warnings=warnings,
@@ -500,7 +504,7 @@ DEFAULTS = dict(
     engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
-    T_op_s=240.0, P_lim=80.0, T1p_on_s=400.0, T1p_off_h=1.0, T1t_h=10.0,
+    M_ss=50.0, T_b_s=150.0, T1p_off_h=1.0, T1t_h=10.0,
     run_h=24.0, on_h=24.0,
 )
 
