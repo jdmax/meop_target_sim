@@ -112,7 +112,10 @@ legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter
 @media (max-width: 520px) { #scene { height: 500px; } }
 .tlegend { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .tlegend .bar { flex: 1; height: 8px; border-radius: 4px; min-width: 80px; }
-.tlegend .ticks { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.tlegend .ticks { position: relative; height: 1.4em; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.tlegend .ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.tlegend .ticks span:first-child { transform: none; }
+.tlegend .ticks span:last-child { transform: translateX(-100%); }
 
 .readouts { display: grid; gap: 14px; }
 .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
@@ -149,6 +152,26 @@ dl.facts dd { margin: 0; text-align: right; font-family: var(--font-mono); font-
 }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* save and load */
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.savepanel { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 18px 26px; align-items: start; }
+@media (max-width: 860px) { .savepanel { grid-template-columns: minmax(0, 1fr); } }
+.save-form { display: grid; gap: 12px; min-width: 0; }
+.save-form h2 { margin-bottom: -2px; }
+.field { display: grid; gap: 3px; }
+.field label { font-size: 13px; color: var(--muted); }
+.field input { width: 100%; font: 14.5px var(--font-body); padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+.incl { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.incl label { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+.incl input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+.save-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#saveStatus { margin: 0; min-height: 1.4em; }
+#saveStatus.err { color: var(--bad); }
+.save-preview { min-width: 0; display: grid; gap: 6px; }
+.save-preview .cap { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.save-preview .cap span { font-size: 12.5px; color: var(--muted); font-family: var(--font-mono); }
+#figPreviewWrap canvas { display: block; width: 100%; height: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #FFFFFF; }
 .legend i.dash { background: none !important; height: 0; border-top: 2px dashed; vertical-align: 5px; }
 .legend i.dot { background: none !important; height: 0; border-top: 2px dotted; vertical-align: 5px; }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px 22px; margin-top: 10px; }
@@ -192,8 +215,39 @@ details.src[open] > summary h2::before { content: "▾ "; }
       <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and its source is listed at the bottom.</p>
       <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
     </div>
-    <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
+    <div class="head-actions">
+      <button class="btn ghost" type="button" id="saveToggle" aria-expanded="false" aria-controls="savePanel">Save / load</button>
+      <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
+    </div>
   </header>
+
+  <section class="card savepanel" id="savePanel" aria-label="Save a figure, settings or data" hidden>
+    <div class="save-form">
+      <h2>Save or load</h2>
+      <div class="field"><label for="figTitle">Title</label><input type="text" id="figTitle" placeholder="³He two-cell exchange" autocomplete="off"></div>
+      <div class="field"><label for="figNotes">Notes</label><input type="text" id="figNotes" placeholder="For example: sealed cell #3 values, 4.7 T" autocomplete="off"></div>
+      <fieldset class="incl">
+        <legend>Figure includes</legend>
+        <label><input type="checkbox" id="inc-scene" checked>Cell schematic</label>
+        <label><input type="checkbox" id="inc-build" checked>Build-up chart</label>
+        <label><input type="checkbox" id="inc-zero" checked>Zeroing chart</label>
+        <label><input type="checkbox" id="inc-settings" checked>Settings</label>
+        <label><input type="checkbox" id="inc-results" checked>Results</label>
+      </fieldset>
+      <div class="save-actions">
+        <button class="btn" type="button" id="saveFig">Download figure (PNG)</button>
+        <button class="btn ghost" type="button" id="saveJson">Save settings (JSON)</button>
+        <button class="btn ghost" type="button" id="saveCsv">Save curves (CSV)</button>
+        <button class="btn ghost" type="button" id="loadJson">Load settings…</button>
+        <input type="file" id="loadFile" accept=".json,application/json" hidden>
+      </div>
+      <p class="hint" id="saveStatus" role="status">The title and notes go on the figure and into the saved files. Settings files load back into this page.</p>
+    </div>
+    <div class="save-preview">
+      <div class="cap"><h2>Figure preview</h2><span id="figSize"></span></div>
+      <div id="figPreviewWrap"></div>
+    </div>
+  </section>
 
   <div class="layout">
     <aside class="rail" aria-label="Model inputs">
@@ -475,6 +529,7 @@ const css = name => getComputedStyle(document.documentElement).getPropertyValue(
 function show(res, source) {
   if (!res.ok) { showError((source === "python" ? "Python: " : "") + res.error); return; }
   R = res;
+  lastSource = source;
   charts.forEach(ch => { ch.hover = null; });
   const ratio = R.ss_pump > 0 ? R.ss_target / R.ss_pump : 0;
   $("kPp").textContent = fmtPct(R.ss_pump);
@@ -574,6 +629,8 @@ function show(res, source) {
       ? `JavaScript port agrees${d < 1e-12 ? " to machine precision" : ""}`
       : `JavaScript port differs by ${(d * 100).toPrecision(2)}%, so previews wait for Python`);
   }
+  if (loadCheck && source !== "preview") checkLoaded();
+  schedulePreview(300);
   drawCharts();
 }
 function fillFacts(dl, rows) {
@@ -598,7 +655,9 @@ function tColor(T) {
   }
   return "rgb(196,71,31)";
 }
-$("tbar").style.background = "linear-gradient(90deg," + [5, 8, 12, 20, 30, 50, 80, 120, 160, 220, 300].map(t => tColor(t)).join(",") + ")";
+const tPos = T => Math.log(Math.max(5, Math.min(300, T)) / 5) / Math.log(60);   // position on the log-scale color bar
+$("tbar").style.background = "linear-gradient(90deg," + [5, 8, 12, 20, 30, 50, 80, 120, 160, 220, 300].map(t => tColor(t) + " " + (tPos(t) * 100).toFixed(1) + "%").join(",") + ")";
+document.querySelectorAll(".tlegend .ticks span").forEach(s => { s.style.left = (tPos(parseFloat(s.textContent)) * 100).toFixed(1) + "%"; });
 
 /* ---------------------------------------------------------------- scene */
 const scene = $("scene"), sctx = scene.getContext("2d");
@@ -645,7 +704,7 @@ function layout(W, H) {
   const legX = params.mode === "loop" ? [cx - spread, cx + spread] : [cx];
   return { pump, target, cx, legX, y0: pump.y + pump.h, y1: target.y };
 }
-function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col) {
+function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col, still) {
   ctx.save();
   ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, isMetal ? 6 : r.h / 2.4);
   ctx.fillStyle = isMetal ? col.metal : col.glass; ctx.fill();
@@ -654,7 +713,7 @@ function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col) {
   const padX = isMetal ? 14 : r.h / 2.6, area = { x: r.x + padX, y: r.y + 12, w: r.w * 0.62 - padX, h: r.h - 24 };
   const cols = Math.max(4, Math.floor(area.w / 14)), rows = Math.max(2, Math.floor(area.h / 17));
   const n = cols * rows;
-  updateSpins(spinsArr, n, P, reduceMotion ? null : 0.06);
+  updateSpins(spinsArr, n, P, still || reduceMotion ? null : 0.06);
   const dx = area.w / cols, dy = area.h / rows;
   for (let i = 0; i < n; i++) {
     const c = i % cols, rr = (i / cols) | 0, x = area.x + dx * (c + 0.5), y = area.y + dy * (rr + 0.5), up = spinsArr[i] > 0;
@@ -672,9 +731,10 @@ function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col) {
   ctx.fillStyle = col.muted; ctx.font = `600 13px ${css("--font-display")}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   ctx.fillText(label, r.x + 4, isMetal ? r.y + r.h + 18 : r.y - 10);
 }
-function drawScene(dtSec) {
-  const [W, H] = fitCanvas(scene), ctx = sctx;
-  ctx.clearRect(0, 0, W, H);
+function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still frame for a saved figure
+  let W, H, ctx;
+  if (out) ({ ctx, W, H } = out);
+  else { [W, H] = fitCanvas(scene); ctx = sctx; ctx.clearRect(0, 0, W, H); }
   if (!R) return;
   const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), glass: css("--glass"), metal: css("--metal"), panel: css("--panel"), accent: css("--accent") };
   const L = layout(W, H), Hcm = params.length_cm, span = L.y1 - L.y0;
@@ -739,6 +799,8 @@ function drawScene(dtSec) {
 
   // flow / diffusion tracers
   const loop = params.mode === "loop" && Math.abs(R.mdot_mg_h) > 0.01;
+  if (out) { if (loop) drawFlowArrows(ctx, L, legs, yOf, Hcm, col); }
+  else {
   const nPer = 14;
   if (dots.length !== legs.length * nPer) { dots = []; legs.forEach((_, li) => { for (let k = 0; k < nPer; k++) dots.push({ li, s: Math.random() * Hcm }); }); }
   const vis = loop ? Math.min(1.2, 0.25 + Math.log10(1 + Math.abs(R.mdot_mg_h)) / 3) : 0;
@@ -758,9 +820,11 @@ function drawScene(dtSec) {
     ctx.fillStyle = col.ink; ctx.globalAlpha = 0.75;
     ctx.beginPath(); ctx.arc(L.legX[d.li], yOf(d.s), 2.1, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
   });
+  }
 
-  drawCell(ctx, L.pump, `Pumping cell · ${params.Th} K · ${params.V_pump_cc} cm³`, Pp, spins.pump, col.warm, false, col);
-  drawCell(ctx, L.target, `Target cell · ${params.Tc} K · ${params.V_target_cc} cm³`, Pt, spins.target, col.cold, true, col);
+  const spinSet = out ? out.spins : spins;
+  drawCell(ctx, L.pump, `Pumping cell · ${params.Th} K · ${params.V_pump_cc} cm³`, Pp, spinSet.pump, col.warm, false, col, !!out);
+  drawCell(ctx, L.target, `Target cell · ${params.Tc} K · ${params.V_target_cc} cm³`, Pt, spinSet.target, col.cold, true, col, !!out);
 }
 function label(ctx, x, y, text, side, col) {
   ctx.save(); ctx.fillStyle = col.muted; ctx.font = `11.5px ${css("--font-mono")}`;
@@ -812,20 +876,22 @@ function timeTicks(tMax, unit) {
   return { step: s * 60, fmt: t => t / 60 + " min" };
 }
 function drawCharts() { charts.forEach((_, k) => drawChart(k)); }
-function drawChart(k) {
-  const ch = charts[k], [W, H] = fitCanvas(ch.cv), ctx = ch.cv.getContext("2d");
-  ctx.clearRect(0, 0, W, H);
+function drawChart(k, out) {   // out = { ctx, W, H, fs } draws into a saved figure; fs scales the axis type
+  const ch = charts[k];
+  let W, H, ctx;
+  if (out) ({ ctx, W, H } = out);
+  else { [W, H] = fitCanvas(ch.cv); ctx = ch.cv.getContext("2d"); ctx.clearRect(0, 0, W, H); }
   if (!R) return;
   const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold") };
-  const sp = chartSpec(k, col);
-  const m = { l: 44, r: 14, t: 10, b: 30 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const sp = chartSpec(k, col), fs = (out && out.fs) || 1;
+  const m = { l: 44 * fs, r: 14, t: 10, b: 30 * fs }, pw = W - m.l - m.r, ph = H - m.t - m.b;
   const tMax = sp.t[sp.t.length - 1];
   const yMaxRaw = Math.max(0.05, R.ss_pump, R.ss_target, ...R.P_pump, ...R.P_target, ...R.shut_P_pump) * 100;
   const yStep = yMaxRaw > 40 ? 10 : yMaxRaw > 15 ? 5 : yMaxRaw > 6 ? 2 : 1;
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
   const X = t => m.l + (t / tMax) * pw, Y = v => m.t + ph - (Math.max(0, v) * 100 / yMax) * ph;
-  ch.geom = { m, pw };
-  ctx.font = `11px ${css("--font-mono")}`; ctx.lineWidth = 1;
+  if (!out) ch.geom = { m, pw };
+  ctx.font = `${11 * fs}px ${css("--font-mono")}`; ctx.lineWidth = 1;
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
   for (let v = 0; v <= yMax + 1e-9; v += yStep) {
     const y = Y(v / 100); ctx.strokeStyle = col.line; ctx.globalAlpha = v === 0 ? 1 : 0.55;
@@ -845,6 +911,7 @@ function drawChart(k) {
     s.y.forEach((v, i) => { const x = X(sp.t[i]), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
   });
+  if (out) return;
   // hover readout
   const i = ch.hover;
   if (i == null || i >= sp.t.length) { ch.tr.textContent = "Hover or tap the chart to read values"; return; }
@@ -875,6 +942,404 @@ function frame(ts) {
 window.addEventListener("resize", () => { drawCharts(); });
 try { new MutationObserver(() => drawCharts()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawCharts());
+
+/* ---------------------------------------------------------------- save, load and figure export */
+// Figures render off-screen in the light palette at a fixed logical width, so they look the same from any screen.
+const MODEL_VER = (() => {
+  const s = document.querySelector('script[src*="he3_model.js"]');
+  const m = s && (s.getAttribute("src") || "").match(/[?&]v=([^&#]+)/);
+  return m && m[1] !== "dev" ? m[1] : null;
+})();
+const PAGE_URL = /^https?:$/.test(location.protocol) ? location.origin + location.pathname.replace(/index\.html$/, "") : null;
+const INC = ["scene", "build", "zero", "settings", "results"];
+const EXPORT_KEY = "he3x-export";
+const FIG = { W: 1400, pad: 36, gap: 24, sceneW: 480, sceneH: 600, chartH: 380, tableMax: 600 };
+const TB = { head: 28, row: 23, gap: 12 };
+let lastSource = null, loadCheck = null, previewTimer = null;
+
+function engineLabel() { return py ? "Python (Pyodide " + PYO_VER + ")" : "JavaScript port"; }
+function figOptions() {
+  const o = { title: $("figTitle").value.trim(), notes: $("figNotes").value.trim() };
+  INC.forEach(k => { o[k] = $("inc-" + k).checked; });
+  return o;
+}
+try {
+  const o = JSON.parse(localStorage.getItem(EXPORT_KEY) || "null");
+  if (o) {
+    $("figTitle").value = o.title || "";
+    $("figNotes").value = o.notes || "";
+    INC.forEach(k => { if (typeof o[k] === "boolean") $("inc-" + k).checked = o[k]; });
+  }
+} catch (e) {}
+function saveExportPrefs() { try { localStorage.setItem(EXPORT_KEY, JSON.stringify(figOptions())); } catch (e) {} }
+function setStatus(msg, err) { const s = $("saveStatus"); s.textContent = msg; s.classList.toggle("err", !!err); }
+function fileBase() {
+  const d = new Date(), p = n => String(n).padStart(2, "0");
+  const slug = $("figTitle").value.replace(/³/g, "3").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+  return (slug || "he3-exchange") + `_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+}
+function download(blob, name) {
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function withLightTheme(fn) {
+  const root = document.documentElement, prev = root.getAttribute("data-theme");
+  root.setAttribute("data-theme", "light");
+  try { return fn(); }
+  finally { if (prev == null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", prev); }
+}
+
+/* --- figure content */
+function settingsGroups() {
+  const g = [["Configuration", [
+    ["Gas exchange", params.mode === "loop" ? "Convection loop, two tubes" : "Single tube"],
+    ["Pumping cell temperature", params.Th + " K"]]]];
+  ["cells", "tubes", "loop", "int", "pump"].forEach(fs => {
+    if (fs === "loop" && params.mode !== "loop") return;
+    const rows = DEFS.filter(d => d.fs === fs && (d.toggle || fs !== "int" || params.intercept))
+      .map(d => [d.label, d.toggle ? (params[d.key] ? "on" : "off") : roundTo(params[d.key], d.dp) + (d.unit ? " " + d.unit : "")]);
+    g.push([$("fs-" + fs).querySelector("legend").textContent, rows]);
+  });
+  return g;
+}
+function resultGroups() {
+  const conv = params.mode === "loop", h = R.heat_mW, pp = R.paper;
+  const ex = [["Target exchange time N_t/G", fmtTime(R.tau_x_target_s)], ["Conductance G", fmtSci(R.G) + " /s"]];
+  if (conv) ex.push(["  by circulation", fmtSci(R.G_conv) + " /s"],
+    ["Loop flow", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"],
+    ["Reynolds number, cold end", R.Re.toFixed(1)]);
+  const heat = [["Cold stage (target cell and clamps)", fmtmW(h.cold)]];
+  if (params.intercept) heat.push([`${params.T_int} K intercept`, fmtmW(h.intercept)]);
+  if (conv) heat.push(h.engine <= 0 ? ["Riser engine heater", fmtmW(-h.engine)] : [`Engine clamp at ${params.T_engine} K removes`, fmtmW(h.engine)]);
+  heat.push(["Supplied at the warm end", fmtmW(-h.warm)]);
+  return [
+    ["Steady state, laser and discharge on", [
+      ["Pumping cell", fmtPct(R.ss_pump)],
+      ["Target cell", fmtPct(R.ss_target)],
+      ["Target reaches 90% in", fmtTime(R.t90_target_s)],
+      ["P_t = M_ss/(1+a+b)", `a = ${R.loss_exchange.toPrecision(2)}, b = ${R.loss_capacity.toPrecision(2)}`]]],
+    ["Gas exchange", ex],
+    ["Heat", heat],
+    ["Pumping-cell probe after zeroing", [
+      ["Exchange time t_ex", fmtTime(pp.t_ex)],
+      ["Decay constants τ_s, τ_l", fmtTime(pp.tau_s) + ", " + fmtTime(pp.tau_l)],
+      ["Zeroed pump cell peaks at", fmtPct(pp.P_peak) + " after " + fmtTime(pp.t_peak)],
+      ["Late-time M_p/M_t", pp.late_ratio.toFixed(3)]]],
+  ];
+}
+const CHART_LEGEND = col => [
+  [["Pumping cell", col.warm], ["Target cell", col.cold], ["Steady state", col.muted, [4, 4], 1.4]],
+  [["Pumping cell, zeroed", col.warm], ["Target cell", col.cold], ["Shuttered, not zeroed", col.muted, [6, 4], 1.4],
+   ["a_l·exp(−t/τ_l)", col.warm, [1.5, 3.5], 1.6]],
+];
+
+/* --- drawing helpers */
+function wrapText(ctx, text, w) {
+  const lines = []; let line = "";
+  text.split(/\s+/).forEach(word => {
+    const t = line ? line + " " + word : word;
+    if (line && ctx.measureText(t).width > w) { lines.push(line); line = word; } else line = t;
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+function fitText(ctx, s, w) {
+  if (ctx.measureText(s).width <= w) return s;
+  while (s.length > 1 && ctx.measureText(s + "…").width > w) s = s.slice(0, -1);
+  return s + "…";
+}
+function tableHeight(groups) { return groups.reduce((s, [, rows], i) => s + (i ? TB.gap : 0) + TB.head + rows.length * TB.row, 0); }
+function drawTable(ctx, b, col) {
+  const x = b.x, w = Math.min(b.w, FIG.tableMax);
+  let y = b.y;
+  b.groups.forEach(([head, rows], gi) => {
+    if (gi) y += TB.gap;
+    ctx.font = `600 13px ${css("--font-display")}`; ctx.fillStyle = col.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(fitText(ctx, head.toUpperCase(), w), x, y + 18);
+    y += TB.head;
+    rows.forEach(([k, v]) => {
+      ctx.strokeStyle = col.line; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(x, y + 0.5); ctx.lineTo(x + w, y + 0.5); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = `500 13.5px ${css("--font-mono")}`; ctx.fillStyle = col.ink; ctx.textAlign = "right";
+      const vw = ctx.measureText(v).width;
+      ctx.fillText(v, x + w, y + 16);
+      const ind = k.startsWith("  ") ? 14 : 0;
+      ctx.font = `14px ${css("--font-body")}`; ctx.fillStyle = col.muted; ctx.textAlign = "left";
+      ctx.fillText(fitText(ctx, k.trim(), w - vw - 16 - ind), x + ind, y + 16);
+      y += TB.row;
+    });
+  });
+}
+function drawLegend(ctx, x, y, w, items, col) {
+  ctx.font = `13.5px ${css("--font-body")}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  let xx = x, yy = y, lines = 1;
+  items.forEach(([text, c, dash, lw]) => {
+    const iw = 28 + ctx.measureText(text).width;
+    if (xx > x && xx + iw > x + w) { xx = x; yy += 20; lines++; }
+    ctx.strokeStyle = c; ctx.lineWidth = lw || 2.2; ctx.setLineDash(dash || []);
+    ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + 22, yy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col.ink; ctx.fillText(text, xx + 28, yy);
+    xx += iw + 18;
+  });
+  return lines * 20;
+}
+function drawChartBlock(ctx, b, col) {
+  const cap = document.querySelectorAll(".charts figcaption")[b.k];
+  ctx.font = `600 16px ${css("--font-display")}`; ctx.fillStyle = col.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillText(fitText(ctx, cap ? cap.textContent : "", b.w), b.x, b.y + 16);
+  const top = b.y + 26 + drawLegend(ctx, b.x, b.y + 36, b.w, CHART_LEGEND(col)[b.k], col) + 6;
+  ctx.translate(b.x - 4, top);
+  drawChart(b.k, { ctx, W: b.w + 4, H: b.y + b.h - top, fs: 1.2 });
+}
+function drawFlowArrows(ctx, L, legs, yOf, Hcm, col) {   // still frames show the loop direction with chevrons
+  legs.forEach((leg, li) => {
+    const x = L.legX[li], d = (li === 0) === (R.mdot_mg_h > 0) ? -1 : 1;
+    ctx.save(); ctx.strokeStyle = col.ink; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    [0.55, 0.7, 0.85].forEach(f => {
+      const y = yOf(f * Hcm);
+      ctx.beginPath(); ctx.moveTo(x - 4.5, y - d * 3); ctx.lineTo(x, y + d * 3); ctx.lineTo(x + 4.5, y - d * 3); ctx.stroke();
+    });
+    ctx.restore();
+  });
+}
+function drawSceneBlock(ctx, b, col) {
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 10);
+  ctx.fillStyle = col.panel; ctx.fill(); ctx.strokeStyle = col.line; ctx.lineWidth = 1; ctx.stroke(); ctx.clip();
+  ctx.translate(b.x + 10, b.y + 8);
+  drawScene(0, { ctx, W: b.w - 20, H: b.h - 58, spins: { pump: [], target: [] } });
+  ctx.restore();
+  const bx = b.x + 66, bw = b.w - 96, by = b.y + b.h - 36;
+  ctx.font = `12.5px ${css("--font-body")}`; ctx.fillStyle = col.muted; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("Tube T", b.x + 16, by + 4);
+  const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+  [5, 8, 12, 20, 30, 50, 80, 120, 160, 220, 300].forEach(T => g.addColorStop(tPos(T), tColor(T)));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(bx, by, bw, 8, 4); ctx.fill();
+  ctx.font = `11px ${css("--font-mono")}`; ctx.fillStyle = col.muted; ctx.textBaseline = "top";
+  [5, 15, 40, 100, 300].forEach(T => {
+    ctx.textAlign = T === 5 ? "left" : T === 300 ? "right" : "center";
+    ctx.fillText(T === 5 || T === 300 ? T + " K" : String(T), bx + tPos(T) * bw, by + 12);
+  });
+}
+
+/* --- layout and render */
+function figureLayout(opt, ctx) {
+  const { W, pad, gap } = FIG, inner = W - 2 * pad, text = [], blocks = [];
+  let y = pad;
+  let f = `700 32px ${css("--font-display")}`; ctx.font = f;
+  text.push({ text: fitText(ctx, opt.title || $("figTitle").placeholder, inner), font: f, color: "ink", y: y + 30 }); y += 30;
+  if (opt.notes) {
+    f = `16px ${css("--font-body")}`; ctx.font = f;
+    wrapText(ctx, opt.notes, inner).slice(0, 3).forEach(l => { y += 24; text.push({ text: l, font: f, color: "ink", y }); });
+  }
+  const when = new Date().toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const meta = [when, engineLabel(), MODEL_VER && "model " + MODEL_VER, PAGE_URL && PAGE_URL.replace(/^https?:\/\//, "")].filter(Boolean).join("   ·   ");
+  f = `12.5px ${css("--font-mono")}`; ctx.font = f; y += 24;
+  text.push({ text: fitText(ctx, meta, inner), font: f, color: "muted", y }); y += 6;
+
+  const tables = [];
+  if (opt.settings) tables.push(settingsGroups());
+  if (opt.results) tables.push(resultGroups());
+  const ks = [opt.build ? 0 : -1, opt.zero ? 1 : -1].filter(k => k >= 0);
+  if (opt.scene && !tables.length) {           // schematic beside stacked charts: about 16:9, for a slide
+    y += gap;
+    blocks.push({ kind: "scene", x: pad, y, w: FIG.sceneW, h: FIG.sceneH });
+    const cx = pad + FIG.sceneW + gap, cw = inner - FIG.sceneW - gap;
+    const ch = ks.length ? (FIG.sceneH - gap * (ks.length - 1)) / ks.length : 0;
+    ks.forEach((k, i) => blocks.push({ kind: "chart", k, x: cx, y: y + i * (ch + gap), w: cw, h: ch }));
+    y += FIG.sceneH;
+  } else {
+    if (opt.scene || tables.length) {
+      y += gap;
+      const rowH = Math.max(opt.scene ? FIG.sceneH : 0, ...tables.map(tableHeight));
+      let x = pad;
+      if (opt.scene) { blocks.push({ kind: "scene", x, y, w: FIG.sceneW, h: rowH }); x += FIG.sceneW + gap; }
+      const tw = tables.length ? (pad + inner - x - gap * (tables.length - 1)) / tables.length : 0;
+      tables.forEach(groups => { blocks.push({ kind: "table", groups, x, y, w: tw, h: rowH }); x += tw + gap; });
+      y += rowH;
+    }
+    if (ks.length) {
+      y += gap;
+      const cw = (inner - gap * (ks.length - 1)) / ks.length;
+      ks.forEach((k, i) => blocks.push({ kind: "chart", k, x: pad + i * (cw + gap), y, w: cw, h: FIG.chartH }));
+      y += FIG.chartH;
+    }
+  }
+  y += gap - 4;
+  f = `12.5px ${css("--font-body")}`; ctx.font = f;
+  (R.warnings || []).forEach(w => wrapText(ctx, "Note: " + w, inner).forEach(l => { y += 18; text.push({ text: l, font: f, color: "warn", y }); }));
+  wrapText(ctx, "Two-cell target concept: Maxwell & Milner, arXiv:2106.06606. Pumping-cell probe: Maxwell, Epstein & Milner, arXiv:1412.6167.", inner)
+    .forEach(l => { y += 18; text.push({ text: l, font: f, color: "muted", y }); });
+  return { W, H: Math.ceil(y + pad - 8), text, blocks };
+}
+function renderFigure(opt, scale) {
+  return withLightTheme(() => {
+    const L = figureLayout(opt, document.createElement("canvas").getContext("2d"));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(L.W * scale); cv.height = Math.round(L.H * scale);
+    const ctx = cv.getContext("2d");
+    ctx.scale(scale, scale);
+    const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), panel: css("--panel"), warn: css("--warn") };
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, L.W, L.H);
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    L.text.forEach(t => { ctx.font = t.font; ctx.fillStyle = col[t.color]; ctx.fillText(t.text, FIG.pad, t.y); });
+    L.blocks.forEach(b => {
+      ctx.save();
+      if (b.kind === "scene") drawSceneBlock(ctx, b, col);
+      else if (b.kind === "chart") drawChartBlock(ctx, b, col);
+      else drawTable(ctx, b, col);
+      ctx.restore();
+    });
+    cv.dataset.h = L.H;
+    return cv;
+  });
+}
+function schedulePreview(ms) {
+  if ($("savePanel").hidden) return;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(renderPreview, ms == null ? 150 : ms);
+}
+function renderPreview() {
+  const wrap = $("figPreviewWrap"), opt = figOptions();
+  if (!R) return;
+  if (!INC.some(k => opt[k])) {
+    wrap.innerHTML = '<p class="hint">Choose at least one part to include in the figure.</p>';
+    $("figSize").textContent = "";
+    return;
+  }
+  const s = Math.max(0.5, Math.min(2, (wrap.clientWidth || 800) * (window.devicePixelRatio || 1) / FIG.W));
+  const cv = renderFigure(opt, s);
+  cv.setAttribute("role", "img"); cv.setAttribute("aria-label", "Preview of the figure");
+  wrap.replaceChildren(cv);
+  $("figSize").textContent = `PNG, ${FIG.W * 2} × ${2 * cv.dataset.h} px, white background`;
+}
+
+/* --- settings and data files */
+const r6 = v => (typeof v === "number" && isFinite(v)) ? +v.toPrecision(6) : (v ?? null);
+const r6a = a => a.map(r6);
+const r6o = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r6(v)]));
+function resultSummary() {
+  const pp = R.paper;
+  return {
+    P_pump_steady: r6(R.ss_pump), P_target_steady: r6(R.ss_target), t90_target_s: r6(R.t90_target_s),
+    tau_x_target_s: r6(R.tau_x_target_s), tau_x_pump_s: r6(R.tau_x_pump_s),
+    G_per_s: r6(R.G), G_diffusion_per_s: r6(R.G_diff), G_circulation_per_s: r6(R.G_conv),
+    loop_flow_mg_per_h: r6(R.mdot_mg_h), reynolds_cold_end: r6(R.Re), N_pump: r6(R.Np), N_target: r6(R.Nt),
+    a_exchange: r6(R.loss_exchange), b_capacity: r6(R.loss_capacity),
+    heat_mW: r6o(R.heat_mW),
+    probe: {
+      t_ex_s: r6(pp.t_ex), tau_s_s: r6(pp.tau_s), tau_l_s: r6(pp.tau_l), P_peak: r6(pp.P_peak), t_peak_s: r6(pp.t_peak),
+      late_ratio: r6(pp.late_ratio), zeroed: r6o(pp.zeroed), shuttered: r6o(pp.shuttered),
+    },
+    warnings: R.warnings || [],
+  };
+}
+function header(o) {
+  return { title: o.title || null, notes: o.notes || null, saved: new Date().toISOString(), page: PAGE_URL, model_version: MODEL_VER, engine: engineLabel() };
+}
+$("saveJson").addEventListener("click", () => {
+  const doc = Object.assign({ app: "meop_target_sim", format: 1 }, header(figOptions()), {
+    settings: Object.assign({}, params),
+    results: resultSummary(),
+    curves: {
+      buildup: { t_h: r6a(R.t_h), P_pump: r6a(R.P_pump), P_target: r6a(R.P_target) },
+      after_shuttering: {
+        t_s: r6a(R.zero_t_s),
+        zeroed: { P_pump: r6a(R.zero_P_pump), P_target: r6a(R.zero_P_target) },
+        not_zeroed: { P_pump: r6a(R.shut_P_pump), P_target: r6a(R.shut_P_target) },
+      },
+    },
+  });
+  // indented, with each number array kept on one line
+  const text = JSON.stringify(doc, null, 2).replace(/\[\s*([-0-9.eE+,\s]*?)\s*\]/g, (_, s) => "[" + s.replace(/\s+/g, "") + "]");
+  const name = fileBase() + ".json";
+  download(new Blob([text + "\n"], { type: "application/json" }), name);
+  setStatus("Downloading " + name + ". Load it back with Load settings.");
+});
+$("saveCsv").addEventListener("click", () => {
+  const h = header(figOptions()), n = v => (typeof v === "number" && isFinite(v)) ? String(+v.toPrecision(8)) : "";
+  const lines = ["# " + (h.title || "3He two-cell exchange")];
+  if (h.notes) lines.push("# " + h.notes);
+  lines.push(`# saved ${h.saved}, ${h.engine}` + (h.model_version ? `, model ${h.model_version}` : "") + (h.page ? `, ${h.page}` : ""));
+  lines.push("# settings:");
+  Object.keys(params).forEach(k => {
+    const d = DEFS.find(d => d.key === k);
+    lines.push(`#   ${k} = ${params[k]}` + (d ? `   (${d.label}${d.unit ? ", " + d.unit : ""})` : ""));
+  });
+  lines.push("# polarization as a fraction; t_s counts from the start of each phase");
+  lines.push("# buildup: laser and discharge on, from zero; zeroed: laser shuttered and pumping cell zeroed; shuttered: laser shuttered, not zeroed");
+  lines.push("phase,t_s,P_pump,P_target");
+  R.t_h.forEach((t, i) => lines.push(`buildup,${n(t * 3600)},${n(R.P_pump[i])},${n(R.P_target[i])}`));
+  R.zero_t_s.forEach((t, i) => lines.push(`zeroed,${n(t)},${n(R.zero_P_pump[i])},${n(R.zero_P_target[i])}`));
+  R.zero_t_s.forEach((t, i) => lines.push(`shuttered,${n(t)},${n(R.shut_P_pump[i])},${n(R.shut_P_target[i])}`));
+  const name = fileBase() + ".csv";
+  download(new Blob([lines.join("\n") + "\n"], { type: "text/csv" }), name);
+  setStatus("Downloading " + name + ". Read it with pandas.read_csv(path, comment=\"#\").");
+});
+$("saveFig").addEventListener("click", async () => {
+  const opt = figOptions();
+  if (!INC.some(k => opt[k])) { setStatus("Choose at least one part to include in the figure.", true); return; }
+  try { await document.fonts.ready; } catch (e) {}
+  const cv = renderFigure(opt, 2), name = fileBase() + ".png";
+  cv.toBlob(b => {
+    if (!b) { setStatus("The browser could not create the image.", true); return; }
+    download(b, name);
+    setStatus("Downloading " + name + ".");
+  }, "image/png");
+});
+
+function applyLoaded(doc, fname) {
+  if (!doc || typeof doc !== "object") throw new Error("the file has no settings in it");
+  const src = doc.settings && typeof doc.settings === "object" ? doc.settings : doc;
+  const next = Object.assign({}, DEFAULTS), ignored = [], clamped = [];
+  let used = 0;
+  for (const [k, v] of Object.entries(src)) {
+    if (!(k in DEFAULTS) || typeof v !== typeof DEFAULTS[k] || (typeof v === "number" && !isFinite(v)) ||
+        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings) ignored.push(k); continue; }
+    const d = DEFS.find(d => d.key === k);
+    let val = v;
+    if (d && !d.toggle) { val = Math.min(d.max, Math.max(d.min, v)); if (val !== v) clamped.push(d.label); }
+    next[k] = val; used++;
+  }
+  if (!used) throw new Error("no settings this page recognizes");
+  if (typeof doc.title === "string") $("figTitle").value = doc.title;
+  if (typeof doc.notes === "string") $("figNotes").value = doc.notes;
+  saveExportPrefs();
+  let msg = `Loaded ${fname}` + (doc.saved ? `, saved ${new Date(doc.saved).toLocaleString()}` : "") + ".";
+  if (clamped.length) msg += ` Limited to the slider range: ${clamped.join(", ")}.`;
+  if (ignored.length) msg += ` Ignored settings this page doesn't use: ${ignored.join(", ")}.`;
+  setStatus(msg);
+  loadCheck = doc.results && typeof doc.results.P_target_steady === "number" && !clamped.length ? doc.results : null;
+  params = next;
+  syncInputs();
+  changed(true);
+}
+function checkLoaded() {   // called from show() with the first full result after a load
+  const c = loadCheck; loadCheck = null;
+  const d = Math.max(Math.abs(R.ss_target - c.P_target_steady), Math.abs(R.ss_pump - c.P_pump_steady));
+  $("saveStatus").textContent += d < 5e-4
+    ? " Results match the file."
+    : ` The model now gives a target steady state of ${fmtPct(R.ss_target)}; the file recorded ${fmtPct(c.P_target_steady)}, so the model has changed since it was saved.`;
+}
+$("loadJson").addEventListener("click", () => $("loadFile").click());
+$("loadFile").addEventListener("change", async () => {
+  const f = $("loadFile").files[0];
+  $("loadFile").value = "";
+  if (!f) return;
+  try { applyLoaded(JSON.parse(await f.text()), f.name); }
+  catch (e) { setStatus(`Could not load ${f.name}: ${e.message}. Choose a settings file saved from this page.`, true); }
+});
+
+$("saveToggle").addEventListener("click", () => {
+  const p = $("savePanel"), open = p.hidden;
+  p.hidden = !open;
+  $("saveToggle").setAttribute("aria-expanded", String(open));
+  if (open) (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => schedulePreview(0));
+});
+INC.forEach(k => $("inc-" + k).addEventListener("change", () => { saveExportPrefs(); schedulePreview(0); }));
+["figTitle", "figNotes"].forEach(id => $(id).addEventListener("input", () => { saveExportPrefs(); schedulePreview(250); }));
+window.addEventListener("resize", () => schedulePreview(250));
 
 /* ---------------------------------------------------------------- source panel */
 const codeEl = $("code").firstElementChild;

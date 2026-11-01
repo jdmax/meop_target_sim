@@ -24,6 +24,14 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 
 **Not modeled:** radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
 
+## Saving figures, settings and data
+
+**Save / load** at the top of the page opens a panel with a title and notes field, a live preview, and four actions:
+
+- **Download figure (PNG).** Choose any of the cell schematic, the two charts, a settings table and a results table. The figure is drawn on a white background at 2800 px wide, with the title, notes, date, model version and the page address in its header. With only the schematic and charts selected, it comes out close to 16:9 for a slide.
+- **Save settings (JSON).** Every input, plus the key results and both sets of curves. **Load settings…** reads the file back into the page. After loading, the page says whether the current model reproduces the results recorded in the file, so a changed model is easy to spot.
+- **Save curves (CSV).** Columns `phase,t_s,P_pump,P_target`, with the settings in `#` comment lines at the top. Read it with `pandas.read_csv(path, comment="#")`.
+
 ## References
 
 - J. Maxwell and R. Milner, "A Concept for Polarized ³He Targets for High Luminosity Scattering Experiments in High Magnetic Field Environments," [arXiv:2106.06606](https://arxiv.org/abs/2106.06606).
