@@ -8,7 +8,7 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 
 ## What it models
 
-- **Tube temperature profiles.** Glass-wall and gas conduction along each leg, including the enthalpy carried by any net gas flow. Clamped sections (cold clamp, riser "engine", intercept) are isothermal; the heat each one removes or supplies is reported.
+- **Tube temperature profiles.** Glass-wall and gas conduction along each leg, including the enthalpy carried by any net gas flow. Clamped sections (cold clamp, riser "engine") are isothermal; the heat each one removes or supplies is reported.
 - **Gas exchange by diffusion.** Polarization diffuses at uniform pressure with conductance `G = A / ∫ ds/(n D)`. Because `n·D ∝ T^0.68` regardless of pressure, the cold end dominates.
 - **Thermosiphon loop.** Buoyancy from the riser/downcomer density difference is balanced against laminar friction. The temperature profiles are re-solved for each trial flow.
 - **Polarization dynamics.** An exact solution of the two-cell rate equations. The pumping cell is described by the steady polarization `Mss` and build-up time `Tb` measured in a sealed cell at the operating pressure and field, from a fit to `M(t) = Mss (1 − e^(−t/Tb))`:

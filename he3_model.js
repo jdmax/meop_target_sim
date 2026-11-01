@@ -156,16 +156,8 @@
 
   function build_legs(P) {
     const cm = 0.01, Tc = P.Tc, Th = P.Th, H = P.length_cm * cm;
-    const useInt = P.intercept && (P.mode === "single" || P.mode === "loop");
-    const Ti = P.T_int, si = P.s_int_cm * cm, errs = [];
+    const errs = [];
     function cold_leg(clamp) {
-      if (useInt) {
-        if (!(clamp + 0.2 * cm < si && si < H - 0.2 * cm)) {
-          errs.push("Intercept height must sit between the cold clamp and the pumping cell.");
-          return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
-        }
-        return { nodes: [[Tc, clamp, "cold"], [Ti, 0, "intercept"], [Th, 0, "warm"]], free: [si - clamp, H - si] };
-      }
       return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
     }
     if (P.mode === "single") return [[cold_leg(0)], errs];
@@ -241,7 +233,7 @@
     const sol = legs.map((leg, i) => solve_leg(leg, tube, p, i === 0 ? mdot : -mdot, true));
     const G_diff = sol.reduce((s, x) => s + 1 / x.R_diff, 0), G_conv = Math.abs(mdot) / M_ATOM, G = G_diff + G_conv;
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
-    const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
+    const heat = { cold: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
     const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
     const kp = G / Np, kt = G / Nt;

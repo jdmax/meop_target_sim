@@ -9,7 +9,7 @@ Transport (per leg, 1-D along the tube):
   * glass wall + gas conduction, plus the enthalpy carried by any net flow.
     In each free (unclamped) section the energy flux F = -K dT/ds + mdot*cp*T is
     constant, so ds/dT = K(T) / (mdot*cp*T - F); F is found by Newton iteration.
-  * clamped sections (cell ends, cold-end "engine", intercepts) are isothermal;
+  * clamped sections (cell ends, cold-end "engine") are isothermal;
     the heat each clamp removes is the jump in F across it.
   * diffusion of polarization at uniform pressure: G = A / int ds/(n D);
     n*D = 1.32 eta(T)/m is independent of pressure.
@@ -327,17 +327,9 @@ def build_legs(P):
     cm = 0.01
     Tc, Th = P["Tc"], P["Th"]
     H = P["length_cm"] * cm
-    use_int = P["intercept"] and P["mode"] in ("single", "loop")
-    Ti, si = P["T_int"], P["s_int_cm"] * cm
     errs = []
 
     def cold_leg(clamp):
-        if use_int:
-            if not (clamp + 0.2 * cm < si < H - 0.2 * cm):
-                errs.append("Intercept height must sit between the cold clamp and the pumping cell.")
-                return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
-            return dict(nodes=[(Tc, clamp, "cold"), (Ti, 0.0, "intercept"), (Th, 0.0, "warm")],
-                        free=[si - clamp, H - si])
         return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
 
     if P["mode"] == "single":
@@ -462,7 +454,7 @@ def compute(P):
     Np = n_num(Th, p) * P["V_pump_cc"] * 1e-6
     Nt = n_num(Tc, p) * P["V_target_cc"] * 1e-6
 
-    heat = dict(cold=0.0, intercept=0.0, engine=0.0, warm=0.0)
+    heat = dict(cold=0.0, engine=0.0, warm=0.0)
     for s in sol:
         for kind, Tn, q in s["heats"]:
             heat[kind] += q
@@ -560,7 +552,6 @@ DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
     id_mm=8.0, wall_mm=1.0, length_cm=10.0,
     engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
-    intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
     on_h=24.0,
