@@ -215,6 +215,25 @@
     return [-1 / (m + q), -1 / (m - q)];
   }
 
+  function two_cell(Np, Nt, G, tau_p, tau_t) {
+    const N = Np + Nt, t_ex = Np * Nt / (N * G);
+    const A = [[-(1 / tau_p + Nt / N / t_ex), Nt / N / t_ex], [Np / N / t_ex, -(1 / tau_t + Np / N / t_ex)]];
+    const dg = 1 / tau_p - 1 / tau_t, mean = 0.5 * (1 / tau_p + 1 / tau_t + 1 / t_ex);
+    const root = 0.5 * Math.sqrt(1 / t_ex ** 2 + dg * dg + 2 / t_ex * (Nt - Np) / N * dg);
+    return { N, Np_N: Np / N, Nt_N: Nt / N, t_ex, tau_p, tau_t, tau_s: 1 / (mean + root), tau_l: 1 / (mean - root), A };
+  }
+  function amplitudes(sys, Mp0, Mt0) {
+    const A = sys.A, rs = 1 / sys.tau_s, rl = 1 / sys.tau_l;
+    const dMp = A[0][0] * Mp0 + A[0][1] * Mt0, dMt = A[1][0] * Mp0 + A[1][1] * Mt0;
+    const a_l = (dMp + rs * Mp0) / (rs - rl), a_lt = (dMt + rs * Mt0) / (rs - rl);
+    return { a_s: Mp0 - a_l, a_l, a_st: a_lt - Mt0, a_lt };
+  }
+  function relax_curves(sys, amp, t) {
+    const rs = 1 / sys.tau_s, rl = 1 / sys.tau_l;
+    return [t.map(x => amp.a_s * Math.exp(-rs * x) + amp.a_l * Math.exp(-rl * x)),
+            t.map(x => amp.a_lt * Math.exp(-rl * x) - amp.a_st * Math.exp(-rs * x))];
+  }
+
   function compute(P) {
     const p = P.p_mbar * 100, Tc = P.Tc, Th = P.Th, tube = Tube(P.id_mm * 1e-3, P.wall_mm * 1e-3);
     const [legs, errs] = build_legs(P);
@@ -224,12 +243,12 @@
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
     const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
-    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_rp_off = 1 / (P.T1p_off_h * 3600), g_t = 1 / (P.T1t_h * 3600);
+    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
     const kp = G / Np, kt = G / Nt;
-    const mat = (gop, grp) => [[[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Mss, 0]];
-    const rates = { on: mat(g_b, 0), off: mat(0, g_rp_off) };
-    const t_end = P.run_h * 3600, t_on = Math.min(P.on_h, P.run_h) * 3600;
-    const [t, pp, pt, ss_on] = evolve(rates, [0, 0], t_on, t_end, 361);
+    const A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]];
+    const rates = { on: [A_on, [g_b * Mss, 0]], off: [A_on, [g_b * Mss, 0]] };
+    const t_on = P.on_h * 3600;
+    const [t, pp, pt, ss_on] = evolve(rates, [0, 0], t_on, t_on, 361);
     let t90 = null; const target = 0.9 * ss_on[1];
     const pt_at = tt => evolve(rates, [0, 0], 1e30, tt, 2)[2][1];
     if (ss_on[1] > 0) {
@@ -237,6 +256,17 @@
       while (pt_at(hi) < target && hi < 1e9) hi *= 2;
       if (hi < 1e9) { for (let i = 0; i < 60; i++) { const mid = 0.5 * (lo + hi); if (pt_at(mid) < target) lo = mid; else hi = mid; } t90 = hi; }
     }
+    const sys = two_cell(Np, Nt, G, P.tau_p_s, P.T1t_h * 3600);
+    const Mp0 = pp[pp.length - 1], Mt0 = pt[pt.length - 1];
+    const amp_zero = amplitudes(sys, 0, Mt0), amp_shut = amplitudes(sys, Mp0, Mt0);
+    const t_win = Math.max(60, 8 * sys.tau_s), tz = [];
+    for (let i = 0; i <= 360; i++) tz.push(t_win * i / 360);
+    const [zp, zt] = relax_curves(sys, amp_zero, tz), [sp, st] = relax_curves(sys, amp_shut, tz);
+    const rs = 1 / sys.tau_s, rl = 1 / sys.tau_l, a_s = amp_zero.a_s, a_l = amp_zero.a_l;
+    const t_peak = a_s < 0 && 0 < a_l ? Math.log(-rs * a_s / (rl * a_l)) / (rs - rl) : 0;
+    const { A: _A, ...paper } = sys;
+    Object.assign(paper, { Mp0, Mt0, zeroed: amp_zero, shuttered: amp_shut, t_peak,
+      P_peak: a_s * Math.exp(-rs * t_peak) + a_l * Math.exp(-rl * t_peak), late_ratio: a_l / amp_zero.a_lt });
     const warnings = errs.slice(), Re = 4 * Math.abs(mdot) / (Math.PI * tube.d * eta(Tc));
     if (Re > 50) warnings.push(`Reynolds number ${Re.toFixed(0)} at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow.`);
     if (heat.cold > 2.0) warnings.push("Cold-stage load exceeds the PT420 rating of about 2 W at 4.2 K.");
@@ -246,10 +276,11 @@
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
       heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])),
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
-      ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(rates.on[0]), t90_target_s: t90,
+      ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
       production_atoms_s: g_b * Mss * Np,
       loss_exchange: (Nt / G) * g_t, loss_capacity: (Nt / Np) * P.T_b_s * g_t,
-      t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, t_on_h: t_on / 3600, warnings,
+      t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, paper,
+      zero_t_s: tz, zero_P_pump: zp, zero_P_target: zt, shut_P_pump: sp, shut_P_target: st, warnings,
     };
   }
   function run(json) { try { return JSON.stringify(compute(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }

@@ -14,14 +14,20 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 - **Polarization dynamics.** An exact solution of the two-cell rate equations. The pumping cell is described by the steady polarization `Mss` and build-up time `Tb` measured in a sealed cell at the operating pressure and field, from a fit to `M(t) = Mss (1 − e^(−t/Tb))`:
 
   ```
-  dPp/dt = (Mss − Pp)/Tb − (G/Np)(Pp − Pt)        discharge on
-  dPp/dt = −Pp/T1p,off   − (G/Np)(Pp − Pt)        discharge off
-  dPt/dt = (G/Nt)(Pp − Pt) − Pt/T1t
+  dPp/dt = (Mss − Pp)/Tb − (G/Np)(Pp − Pt)        laser and discharge on
+  dPp/dt = −Pp/τp        − (G/Np)(Pp − Pt)        laser shuttered, discharge on
+  dPt/dt = (G/Nt)(Pp − Pt) − Pt/τt
   ```
 
   In steady state the target reaches `Pt = Mss / (1 + a + b)`, where `a = τx/T1t` (exchange too slow, τx = Nt/G) and `b = (Nt/Np)(Tb/T1t)` (MEOP can't keep up with target relaxation).
+- **Reading the target from the pumping cell.** After the build-up, the laser is shuttered and the pumping cell is zeroed. The discharge stays on so the optical polarimeter can watch polarized gas come back from the target. The page shows this in the terms of [Maxwell, Epstein & Milner, arXiv:1412.6167](https://arxiv.org/abs/1412.6167): `N = Np + Nt`, the exchange time `t_ex = Np·Nt/(N·G)`, the decay constants `τs` and `τl` (eq. 4), and the fit amplitudes `a_s`, `a_l`, `a_st` and `a_lt` (eq. 3), both with and without zeroing. Once the short term has died out, `Mp/Mt = a_l/a_lt`.
 
 **Not modeled:** radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
+
+## References
+
+- J. Maxwell and R. Milner, "A Concept for Polarized ³He Targets for High Luminosity Scattering Experiments in High Magnetic Field Environments," [arXiv:2106.06606](https://arxiv.org/abs/2106.06606).
+- J.D. Maxwell, C.S. Epstein and R.G. Milner, "Diffusive Transfer of Polarized ³He Gas through Depolarizing Magnetic Gradients," [arXiv:1412.6167](https://arxiv.org/abs/1412.6167).
 
 ## Files
 

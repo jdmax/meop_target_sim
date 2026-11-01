@@ -57,6 +57,8 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 .num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
 header .sub { color: var(--muted); margin: 6px 0 0; max-width: 70ch; }
+header .refs { font-size: 13.5px; }
+header .refs a, .notes a { color: var(--accent); }
 .engine {
   display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--line); background: var(--panel); font: 500 13px var(--font-mono); white-space: nowrap;
@@ -147,9 +149,21 @@ dl.facts dd { margin: 0; text-align: right; font-family: var(--font-mono); font-
 }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-#tread { font: 500 13px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
-#tread b { font-weight: 500; }
-#chart { display: block; width: 100%; height: 250px; margin-top: 8px; touch-action: pan-y; cursor: crosshair; }
+.legend i.dash { background: none !important; height: 0; border-top: 2px dashed; vertical-align: 5px; }
+.legend i.dot { background: none !important; height: 0; border-top: 2px dotted; vertical-align: 5px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px 22px; margin-top: 10px; }
+.charts figure { margin: 0; min-width: 0; }
+.charts figcaption { font: 600 13.5px var(--font-display); color: var(--ink); }
+.tread { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.5em; }
+.tread b { font-weight: 500; }
+.charts canvas { display: block; width: 100%; height: 250px; margin-top: 6px; touch-action: pan-y; cursor: crosshair; }
+.eqs { font: 12.5px/1.6 var(--font-mono); color: var(--muted); margin: 8px 0 0; overflow-x: auto; white-space: pre; }
+.probe { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 28px; align-items: start; }
+table.amps { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+table.amps th { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: right; padding: 2px 0 4px 10px; }
+table.amps th:first-child, table.amps td:first-child { text-align: left; padding-left: 0; }
+table.amps td { text-align: right; padding: 3px 0 3px 10px; font: 13.5px var(--font-mono); font-variant-numeric: tabular-nums; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+table.amps td:first-child { font-family: var(--font-body); color: var(--muted); }
 
 /* source */
 details.src > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -176,6 +190,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
     <div>
       <h1>³He Two-Cell Exchange</h1>
       <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and its source is listed at the bottom.</p>
+      <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
     </div>
     <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
   </header>
@@ -238,14 +253,38 @@ details.src[open] > summary h2::before { content: "▾ "; }
 
       <section class="card" aria-label="Polarization versus time">
         <div class="chart-head">
-          <h2>Polarization build-up</h2>
+          <h2>Polarization: build-up, then zero the pumping cell</h2>
           <div class="legend">
             <span><i style="background:var(--warm)"></i>Pumping cell</span>
             <span><i style="background:var(--cold)"></i>Target cell</span>
+            <span><i class="dash" style="color:var(--muted)"></i>Laser shuttered, not zeroed</span>
+            <span><i class="dot" style="color:var(--warm)"></i>a<sub>l</sub>e<sup>−t/τ<sub>l</sub></sup></span>
           </div>
-          <span id="tread" aria-live="polite">Hover or tap the chart to read values</span>
         </div>
-        <canvas id="chart" aria-label="Polarization of both cells versus time; hover or tap to read values"></canvas>
+        <div class="charts">
+          <figure>
+            <figcaption>Build-up, laser and discharge on</figcaption>
+            <div class="tread" id="tread" aria-live="polite">Hover or tap the chart to read values</div>
+            <canvas id="chart" aria-label="Polarization of both cells during the build-up; hover or tap to read values"></canvas>
+          </figure>
+          <figure>
+            <figcaption>Laser shuttered and pumping cell zeroed; discharge on for the polarimeter</figcaption>
+            <div class="tread" id="tread2" aria-live="polite">Hover or tap the chart to read values</div>
+            <canvas id="chart2" aria-label="Polarization of both cells after the pumping cell is zeroed; hover or tap to read values"></canvas>
+          </figure>
+        </div>
+      </section>
+
+      <section class="card" aria-label="Pumping-cell probe of the target">
+        <div class="section-head"><h2>Reading the target from the pumping cell</h2><span class="pill" id="pPill"></span></div>
+        <p class="eqs" id="eqs"></p>
+        <div class="probe">
+          <dl class="facts" id="pFacts"></dl>
+          <div>
+            <table class="amps" id="amps"></table>
+            <p class="hint">Eq. 3 of Maxwell, Epstein &amp; Milner, <a href="https://arxiv.org/abs/1412.6167" style="color:var(--accent)">arXiv:1412.6167</a>: M<sub>p</sub>(t) = a<sub>s</sub>e<sup>−t/τ<sub>s</sub></sup> + a<sub>l</sub>e<sup>−t/τ<sub>l</sub></sup>, M<sub>t</sub>(t) = a<sub>lt</sub>e<sup>−t/τ<sub>l</sub></sup> − a<sub>st</sub>e<sup>−t/τ<sub>s</sub></sup>. Both columns start at the end of the build-up.</p>
+          </div>
+        </div>
       </section>
 
       <section class="card">
@@ -258,6 +297,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
           <pre id="code" tabindex="0" aria-label="Python model source"><code>Loading…</code></pre>
           <ul class="notes">
             <li>This is the code that produced the numbers on this page. Its entry point <span class="mono">run(params_json)</span> takes the inputs as JSON and returns every result shown.</li>
+            <li>The two-cell target concept is described in <a href="https://arxiv.org/abs/2106.06606">arXiv:2106.06606</a>; the pumping-cell probe and the rate-equation terms follow <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</li>
             <li>Not modeled: radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
           </ul>
         </details>
@@ -284,8 +324,8 @@ const DEFAULTS = {
   engine_cm: 2, gap_cm: 0.5, T_engine: 25,
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
-  M_ss: 50, T_b_s: 150, T1p_off_h: 1, T1t_h: 10,
-  run_h: 24, on_h: 24,
+  M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
+  on_h: 24,
 };
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
@@ -303,10 +343,9 @@ const DEFS = [
   { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 39, dp: 1 },
   { fs: "pump", key: "M_ss", label: "Sealed-cell steady polarization M_ss", unit: "%", min: 5, max: 95, dp: 1 },
   { fs: "pump", key: "T_b_s", label: "Sealed-cell build-up time T_b", unit: "s", min: 5, max: 5000, log: true, dp: 0 },
-  { fs: "pump", key: "T1t_h", label: "Target-cell T₁", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
-  { fs: "pump", key: "run_h", label: "Run length", unit: "h", min: 0.25, max: 96, log: true, dp: 2 },
-  { fs: "pump", key: "on_h", label: "Discharge on for", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
-  { fs: "pump", key: "T1p_off_h", label: "Pump-cell T₁, discharge off", unit: "h", min: 0.05, max: 100, log: true, dp: 2 },
+  { fs: "pump", key: "T1t_h", label: "Target-cell T₁ (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
+  { fs: "pump", key: "tau_p_s", label: "Pump-cell T₁, laser shuttered, discharge on (τ_p)", unit: "s", min: 10, max: 20000, log: true, dp: 0 },
+  { fs: "pump", key: "on_h", label: "Pump for, then zero the pumping cell", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
 ];
 const PRESETS = [
   { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, intercept: false } },
@@ -427,11 +466,10 @@ function fmtmW(v) { const a = Math.abs(v); return a >= 1000 ? (v / 1000).toFixed
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /* ---------------------------------------------------------------- results */
-let hoverIdx = null;
 function show(res, source) {
   if (!res.ok) { showError((source === "python" ? "Python: " : "") + res.error); return; }
   R = res;
-  hoverIdx = null;
+  charts.forEach(ch => { ch.hover = null; });
   const ratio = R.ss_pump > 0 ? R.ss_target / R.ss_pump : 0;
   $("kPp").textContent = fmtPct(R.ss_pump);
   $("kPt").textContent = fmtPct(R.ss_target);
@@ -487,7 +525,32 @@ function show(res, source) {
   hp.className = "pill " + (frac > 1 ? "bad" : frac > 0.5 ? "warn" : "good");
   hp.textContent = (frac * 100).toFixed(frac < 0.1 ? 1 : 0) + "% of PT420";
 
-  $("sealedHint").textContent = `Fit M(t) = M_ss(1 − e^(−t/T_b)) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s.`;
+  $("sealedHint").textContent = `Fit M(t) = M_ss(1 − e^(−t/T_b)) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`;
+
+  // pumping-cell probe, in the terms of arXiv:1412.6167
+  const pp = R.paper, Z = pp.zeroed, S = pp.shuttered;
+  $("eqs").textContent =
+    "Ṁp = −(1/τp + (Nt/N)/t_ex)·Mp + (Nt/N)/t_ex·Mt\n" +
+    "Ṁt =  (Np/N)/t_ex·Mp − (1/τt + (Np/N)/t_ex)·Mt        N = Np + Nt,  t_ex = Np·Nt/(N·G)";
+  fillFacts($("pFacts"), [
+    ["N_p/N, N_t/N", pp.Np_N.toPrecision(3) + ", " + pp.Nt_N.toPrecision(3)],
+    ["Pump-cell relaxation τ_p", fmtTime(pp.tau_p)],
+    ["Target-cell relaxation τ_t", fmtTime(pp.tau_t)],
+    ["Exchange time t_ex", fmtTime(pp.t_ex)],
+    ["Short decay constant τ_s", fmtTime(pp.tau_s)],
+    ["Long decay constant τ_l", fmtTime(pp.tau_l)],
+    ["Zeroed pump cell peaks at", fmtPct(pp.P_peak) + " after " + fmtTime(pp.t_peak)],
+    ["Target when zeroed, M_t(0)", fmtPct(pp.Mt0)],
+    ["Late-time M_p/M_t = a_l/a_lt", pp.late_ratio.toFixed(3)],
+  ]);
+  const pc = v => (v * 100).toFixed(2);
+  $("amps").innerHTML = "<tr><th>Fit constant (%)</th><th>Pump zeroed</th><th>Shuttered only</th></tr>" +
+    [["Starting M_p", 0, pp.Mp0], ["Starting M_t", pp.Mt0, pp.Mt0],
+     ["a_s", Z.a_s, S.a_s], ["a_l", Z.a_l, S.a_l], ["a_st", Z.a_st, S.a_st], ["a_lt", Z.a_lt, S.a_lt]]
+      .map(([k, z, s]) => `<tr><td>${k}</td><td>${pc(z)}</td><td>${pc(s)}</td></tr>`).join("");
+  const lr = pp.late_ratio, ppl = $("pPill");
+  ppl.className = "pill " + (lr > 0.9 ? "good" : lr > 0.6 ? "warn" : "bad");
+  ppl.textContent = "Pump cell recovers to " + Math.round(lr * 100) + "% of target";
 
   const w = $("warnings"); w.innerHTML = "";
   (R.warnings || []).forEach(t => { const p = document.createElement("p"); p.textContent = t; w.appendChild(p); });
@@ -502,7 +565,7 @@ function show(res, source) {
       ? `JavaScript port agrees${d < 1e-12 ? " to machine precision" : ""}`
       : `JavaScript port differs by ${(d * 100).toPrecision(2)}%, so previews wait for Python`);
   }
-  drawChart();
+  drawCharts();
 }
 function fillFacts(dl, rows) {
   dl.innerHTML = "";
@@ -695,67 +758,103 @@ function label(ctx, x, y, text, side, col) {
   ctx.textAlign = side < 0 ? "right" : "left"; ctx.textBaseline = "middle"; ctx.fillText(text, x, y); ctx.restore();
 }
 
-/* ---------------------------------------------------------------- chart */
-const chart = $("chart"), cctx = chart.getContext("2d");
-let chartGeom = null;
-function drawChart() {
-  const [W, H] = fitCanvas(chart), ctx = cctx;
+/* ---------------------------------------------------------------- charts */
+// Two panels sharing a y-axis: the build-up in hours, then the probe transient in seconds or minutes.
+const charts = [
+  { cv: $("chart"), tr: $("tread"), hover: null, geom: null },
+  { cv: $("chart2"), tr: $("tread2"), hover: null, geom: null },
+];
+function chartSpec(k, col) {
+  if (k === 0) return {
+    t: R.t_h, unit: "h",
+    series: [{ y: R.P_pump, c: col.warm, w: 2.2 }, { y: R.P_target, c: col.cold, w: 2.2 }],
+    guides: [[R.ss_pump, col.warm], [R.ss_target, col.cold]],
+    read: i => (R.t_h[i] < 1 ? (R.t_h[i] * 60).toFixed(0) + " min" : R.t_h[i].toFixed(2) + " h") +
+      ` · pump <b style="color:var(--warm)">${(R.P_pump[i] * 100).toFixed(1)}%</b>` +
+      ` · target <b style="color:var(--cold)">${(R.P_target[i] * 100).toFixed(1)}%</b>`,
+  };
+  const p = R.paper, tl = R.zero_t_s.map(t => p.zeroed.a_l * Math.exp(-t / p.tau_l));
+  return {
+    t: R.zero_t_s, unit: "s",
+    series: [
+      { y: tl, c: col.warm, w: 1.6, dash: [1.5, 3.5], a: 0.9 },
+      { y: R.shut_P_pump, c: col.warm, w: 1.4, dash: [6, 4], a: 0.7 },
+      { y: R.shut_P_target, c: col.cold, w: 1.4, dash: [6, 4], a: 0.7 },
+      { y: R.zero_P_target, c: col.cold, w: 2.2 },
+      { y: R.zero_P_pump, c: col.warm, w: 2.2 },
+    ],
+    guides: [],
+    read: i => fmtTime(R.zero_t_s[i]) +
+      ` · pump <b style="color:var(--warm)">${(R.zero_P_pump[i] * 100).toFixed(1)}%</b>` +
+      ` · target <b style="color:var(--cold)">${(R.zero_P_target[i] * 100).toFixed(1)}%</b>` +
+      ` · not zeroed ${(R.shut_P_pump[i] * 100).toFixed(1)}%`,
+  };
+}
+function timeTicks(tMax, unit) {
+  if (unit === "h") {
+    const s = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 6, 12, 24].find(s => tMax / s <= 8) || 24;
+    return { step: s, fmt: t => (s < 1 ? t.toFixed(2).replace(/0$/, "") : t) + " h" };
+  }
+  if (tMax <= 240) {
+    const s = [5, 10, 15, 20, 30, 60].find(s => tMax / s <= 8) || 60;
+    return { step: s, fmt: t => t + " s" };
+  }
+  const s = [1, 2, 5, 10, 15, 30, 60, 120].find(s => tMax / 60 / s <= 8) || 120;
+  return { step: s * 60, fmt: t => t / 60 + " min" };
+}
+function drawCharts() { charts.forEach((_, k) => drawChart(k)); }
+function drawChart(k) {
+  const ch = charts[k], [W, H] = fitCanvas(ch.cv), ctx = ch.cv.getContext("2d");
   ctx.clearRect(0, 0, W, H);
   if (!R) return;
   const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold") };
+  const sp = chartSpec(k, col);
   const m = { l: 44, r: 14, t: 10, b: 30 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
-  const tMax = R.t_h[R.t_h.length - 1];
-  const yMaxRaw = Math.max(0.05, ...R.P_pump, ...R.P_target) * 100;
+  const tMax = sp.t[sp.t.length - 1];
+  const yMaxRaw = Math.max(0.05, R.ss_pump, R.ss_target, ...R.P_pump, ...R.P_target, ...R.shut_P_pump) * 100;
   const yStep = yMaxRaw > 40 ? 10 : yMaxRaw > 15 ? 5 : yMaxRaw > 6 ? 2 : 1;
   const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
-  const X = t => m.l + (t / tMax) * pw, Y = v => m.t + ph - (v * 100 / yMax) * ph;
-  chartGeom = { m, pw, tMax };
-  ctx.font = `11px ${css("--font-mono")}`; ctx.fillStyle = col.muted; ctx.strokeStyle = col.line; ctx.lineWidth = 1;
-  // discharge-off shading
-  if (R.t_on_h < tMax) {
-    ctx.fillStyle = col.line; ctx.globalAlpha = 0.35; ctx.fillRect(X(R.t_on_h), m.t, X(tMax) - X(R.t_on_h), ph); ctx.globalAlpha = 1;
-    ctx.fillStyle = col.muted; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("discharge off", X(R.t_on_h) + 6, m.t + 4);
-  }
+  const X = t => m.l + (t / tMax) * pw, Y = v => m.t + ph - (Math.max(0, v) * 100 / yMax) * ph;
+  ch.geom = { m, pw };
+  ctx.font = `11px ${css("--font-mono")}`; ctx.lineWidth = 1;
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
   for (let v = 0; v <= yMax + 1e-9; v += yStep) {
     const y = Y(v / 100); ctx.strokeStyle = col.line; ctx.globalAlpha = v === 0 ? 1 : 0.55;
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.fillStyle = col.muted; ctx.fillText(v + "%", m.l - 6, y);
   }
-  const niceT = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 6, 12, 24];
-  const tStep = niceT.find(s => tMax / s <= 8) || 24;
+  const tk = timeTicks(tMax, sp.unit);
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let t = 0; t <= tMax + 1e-9; t += tStep) ctx.fillText((tStep < 1 ? t.toFixed(2).replace(/0$/, "") : t) + " h", X(t), m.t + ph + 8);
+  for (let t = 0; t <= tMax + 1e-9; t += tk.step) ctx.fillText(tk.fmt(+t.toFixed(6)), X(t), m.t + ph + 8);
   // steady-state guides
-  [[R.ss_pump, col.warm], [R.ss_target, col.cold]].forEach(([v, c]) => {
+  sp.guides.forEach(([v, c]) => {
     if (v * 100 > yMax) return;
     ctx.strokeStyle = c; ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(m.l, Y(v)); ctx.lineTo(m.l + pw, Y(v)); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
   });
-  [[R.P_pump, col.warm], [R.P_target, col.cold]].forEach(([arr, c]) => {
-    ctx.strokeStyle = c; ctx.lineWidth = 2.2; ctx.beginPath();
-    arr.forEach((v, i) => { const x = X(R.t_h[i]), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  sp.series.forEach(s => {
+    ctx.strokeStyle = s.c; ctx.lineWidth = s.w; ctx.globalAlpha = s.a || 1; ctx.setLineDash(s.dash || []); ctx.beginPath();
+    s.y.forEach((v, i) => { const x = X(sp.t[i]), y = Y(v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
   });
   // hover readout
-  const tr = $("tread");
-  if (hoverIdx == null || hoverIdx >= R.t_h.length) { tr.textContent = "Hover or tap the chart to read values"; return; }
-  const i = hoverIdx, xp = X(R.t_h[i]);
+  const i = ch.hover;
+  if (i == null || i >= sp.t.length) { ch.tr.textContent = "Hover or tap the chart to read values"; return; }
+  const xp = X(sp.t[i]);
   ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xp, m.t); ctx.lineTo(xp, m.t + ph); ctx.stroke(); ctx.globalAlpha = 1;
-  [[R.P_pump[i], col.warm], [R.P_target[i], col.cold]].forEach(([v, c]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(xp, Y(v), 4, 0, 7); ctx.fill(); });
-  const th = R.t_h[i];
-  tr.innerHTML = "t = " + (th < 1 ? (th * 60).toFixed(0) + " min" : th.toFixed(2) + " h") +
-    ` · pump <b style="color:var(--warm)">${(R.P_pump[i] * 100).toFixed(1)}%</b>` +
-    ` · target <b style="color:var(--cold)">${(R.P_target[i] * 100).toFixed(1)}%</b>`;
+  sp.series.filter(s => !s.dash).forEach(s => { ctx.fillStyle = s.c; ctx.beginPath(); ctx.arc(xp, Y(s.y[i]), 4, 0, 7); ctx.fill(); });
+  ch.tr.innerHTML = "t = " + sp.read(i);
 }
-function pick(ev) {
-  if (!R || !chartGeom) return;
-  const r = chart.getBoundingClientRect(), x = ev.clientX - r.left;
-  const t = Math.max(0, Math.min(1, (x - chartGeom.m.l) / chartGeom.pw)) * chartGeom.tMax;
-  let best = 0; R.t_h.forEach((tt, k) => { if (Math.abs(tt - t) < Math.abs(R.t_h[best] - t)) best = k; });
-  if (best !== hoverIdx) { hoverIdx = best; drawChart(); }
-}
-chart.addEventListener("pointermove", pick);
-chart.addEventListener("pointerdown", pick);
-chart.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { hoverIdx = null; drawChart(); } });
+charts.forEach((ch, k) => {
+  function pick(ev) {   // both time grids are uniform, so the nearest sample is a rounding
+    if (!R || !ch.geom) return;
+    const r = ch.cv.getBoundingClientRect(), x = ev.clientX - r.left, n = (k === 0 ? R.t_h : R.zero_t_s).length;
+    const best = Math.round(Math.max(0, Math.min(1, (x - ch.geom.m.l) / ch.geom.pw)) * (n - 1));
+    if (best !== ch.hover) { ch.hover = best; drawChart(k); }
+  }
+  ch.cv.addEventListener("pointermove", pick);
+  ch.cv.addEventListener("pointerdown", pick);
+  ch.cv.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { ch.hover = null; drawChart(k); } });
+});
 
 /* ---------------------------------------------------------------- animation (tracers and spins only) */
 let lastTs = null;
@@ -764,9 +863,9 @@ function frame(ts) {
   drawScene(dt);
   requestAnimationFrame(frame);
 }
-window.addEventListener("resize", () => { drawChart(); });
-try { new MutationObserver(() => drawChart()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawChart());
+window.addEventListener("resize", () => { drawCharts(); });
+try { new MutationObserver(() => drawCharts()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawCharts());
 
 /* ---------------------------------------------------------------- source panel */
 const codeEl = $("code").firstElementChild;

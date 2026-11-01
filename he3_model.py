@@ -3,6 +3,7 @@ he3_model.py -- two-cell polarized 3He exchange model (pure Python, Pyodide-read
 
 Warm MEOP pumping cell (Th) <-> glass leg(s) <-> cold target cell (Tc), with the
 cells filled to the operating pressure at temperature, then valved off from the supply.
+Two-cell target concept: Maxwell & Milner, arXiv:2106.06606.
 
 Transport (per leg, 1-D along the tube):
   * glass wall + gas conduction, plus the enthalpy carried by any net flow.
@@ -17,14 +18,25 @@ Transport (per leg, 1-D along the tube):
     temperature profiles re-solved for each trial flow.
 
 Polarization (exact solution of the linear 2x2 system, piecewise in time):
-  dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          discharge on
-  dPp/dt = -Pp/T1p_off  - (G/Np)(Pp - Pt)           discharge off
-  dPt/dt = (G/Nt)(Pp - Pt) - Pt/T1t
+  dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          laser and discharge on
+  dPp/dt = -Pp/tau_p     - (G/Np)(Pp - Pt)          laser shuttered, discharge on
+  dPt/dt = (G/Nt)(Pp - Pt) - Pt/tau_t
 Mss and Tb are the steady polarization and build-up time measured in a sealed
 cell at the operating pressure and field (Nikiel et al.: dM/dt = Gop (Mss - M)).
 In steady state the target reaches Pt = Mss / (1 + a + b), with
   a = tau_x / T1t            exchange too slow        (tau_x = Nt/G)
   b = (Nt/Np) (Tb / T1t)     MEOP can't keep up with target relaxation.
+
+Pump-cell probe (Maxwell, Epstein & Milner, arXiv:1412.6167): after the build-up
+the laser is shuttered and the pumping cell is zeroed; the discharge stays on so
+the optical polarimeter can watch polarized gas return from the target. With the
+laser off the system is eq. 2 of that paper,
+  dMp/dt = -(1/tau_p + (Nt/N)/t_ex) Mp + (Nt/N)/t_ex Mt
+  dMt/dt = (Np/N)/t_ex Mp - (1/tau_t + (Np/N)/t_ex) Mt
+with N = Np + Nt and t_ex = Np Nt / (N G), and its solution (eq. 3)
+  Mp(t) = a_s exp(-t/tau_s) + a_l exp(-t/tau_l)
+  Mt(t) = a_lt exp(-t/tau_l) - a_st exp(-t/tau_s)
+with tau_s, tau_l from eq. 4. Once the short term has died, Mp/Mt = a_l/a_lt.
 
 Entry point: run(params_json) -> result_json. Edit the property functions freely.
 """
@@ -395,6 +407,38 @@ def eig_times(A):
     return [-1.0 / (m + q), -1.0 / (m - q)]      # slow, fast
 
 
+def two_cell(Np, Nt, G, tau_p, tau_t):
+    """Laser-off rate equations in the terms of arXiv:1412.6167, eqs. 2 and 4."""
+    N = Np + Nt
+    t_ex = Np * Nt / (N * G)
+    A = [[-(1.0 / tau_p + Nt / N / t_ex), Nt / N / t_ex],
+         [Np / N / t_ex, -(1.0 / tau_t + Np / N / t_ex)]]
+    dg = 1.0 / tau_p - 1.0 / tau_t
+    mean = 0.5 * (1.0 / tau_p + 1.0 / tau_t + 1.0 / t_ex)
+    root = 0.5 * math.sqrt(1.0 / t_ex ** 2 + dg * dg + 2.0 / t_ex * (Nt - Np) / N * dg)
+    return dict(N=N, Np_N=Np / N, Nt_N=Nt / N, t_ex=t_ex, tau_p=tau_p, tau_t=tau_t,
+                tau_s=1.0 / (mean + root), tau_l=1.0 / (mean - root), A=A)
+
+
+def amplitudes(sys2, Mp0, Mt0):
+    """a_s, a_l, a_st, a_lt of eq. 3 for starting polarizations Mp0, Mt0,
+    from matching the values and slopes at t = 0."""
+    A = sys2["A"]
+    rs, rl = 1.0 / sys2["tau_s"], 1.0 / sys2["tau_l"]
+    dMp = A[0][0] * Mp0 + A[0][1] * Mt0
+    dMt = A[1][0] * Mp0 + A[1][1] * Mt0
+    a_l = (dMp + rs * Mp0) / (rs - rl)
+    a_lt = (dMt + rs * Mt0) / (rs - rl)
+    return dict(a_s=Mp0 - a_l, a_l=a_l, a_st=a_lt - Mt0, a_lt=a_lt)
+
+
+def relax_curves(sys2, amp, t):
+    rs, rl = 1.0 / sys2["tau_s"], 1.0 / sys2["tau_l"]
+    Mp = [amp["a_s"] * math.exp(-rs * x) + amp["a_l"] * math.exp(-rl * x) for x in t]
+    Mt = [amp["a_lt"] * math.exp(-rl * x) - amp["a_st"] * math.exp(-rs * x) for x in t]
+    return Mp, Mt
+
+
 # ------------------------------------------------------------------ entry
 def compute(P):
     p = P["p_mbar"] * 100.0
@@ -425,25 +469,21 @@ def compute(P):
 
     Mss = P["M_ss"] / 100.0
     g_b = 1.0 / P["T_b_s"]
-    g_rp_off = 1.0 / (P["T1p_off_h"] * 3600.0)
     g_t = 1.0 / (P["T1t_h"] * 3600.0)
     kp, kt = G / Np, G / Nt
 
-    def mat(gop, grp):
-        return ([[-(gop + grp + kp), kp], [kt, -(kt + g_t)]], [gop * Mss, 0.0])
-
-    rates = dict(on=mat(g_b, 0.0), off=mat(0.0, g_rp_off))
-    t_end = P["run_h"] * 3600.0
-    t_on = min(P["on_h"], P["run_h"]) * 3600.0
-    t, pp, pt, ss_on = evolve(rates, [0.0, 0.0], t_on, t_end, 361)
+    # laser and discharge on: build-up from zero
+    A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]]
+    rates = dict(on=(A_on, [g_b * Mss, 0.0]), off=(A_on, [g_b * Mss, 0.0]))
+    t_on = P["on_h"] * 3600.0
+    t, pp, pt, ss_on = evolve(rates, [0.0, 0.0], t_on, t_on, 361)
 
     # 90% rise time of the target cell under pumping
     t90 = None
     target = 0.9 * ss_on[1]
-    A_on = rates["on"][0]
     lo_t, hi_t = 0.0, 1.0
 
-    def pt_at(tt):                              # target P with the discharge always on
+    def pt_at(tt):
         return evolve(rates, [0.0, 0.0], 1e30, tt, 2)[2][-1]
     if ss_on[1] > 0:
         while pt_at(hi_t) < target and hi_t < 1e9:
@@ -456,6 +496,23 @@ def compute(P):
                 else:
                     hi_t = mid
             t90 = hi_t
+
+    # laser shuttered at the end of the build-up, with and without zeroing the pumping cell
+    sys2 = two_cell(Np, Nt, G, P["tau_p_s"], P["T1t_h"] * 3600.0)
+    Mp0, Mt0 = pp[-1], pt[-1]
+    amp_zero = amplitudes(sys2, 0.0, Mt0)
+    amp_shut = amplitudes(sys2, Mp0, Mt0)
+    t_win = max(60.0, 8.0 * sys2["tau_s"])
+    tz = [t_win * i / 360 for i in range(361)]
+    zp, zt = relax_curves(sys2, amp_zero, tz)
+    sp, st = relax_curves(sys2, amp_shut, tz)
+    rs, rl = 1.0 / sys2["tau_s"], 1.0 / sys2["tau_l"]
+    a_s, a_l = amp_zero["a_s"], amp_zero["a_l"]
+    t_peak = math.log(-rs * a_s / (rl * a_l)) / (rs - rl) if a_s < 0 < a_l else 0.0
+    paper = {k: v for k, v in sys2.items() if k != "A"}
+    paper.update(Mp0=Mp0, Mt0=Mt0, zeroed=amp_zero, shuttered=amp_shut,
+                 t_peak=t_peak, P_peak=a_s * math.exp(-rs * t_peak) + a_l * math.exp(-rl * t_peak),
+                 late_ratio=a_l / amp_zero["a_lt"])
 
     warnings = list(errs)
     Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
@@ -486,7 +543,8 @@ def compute(P):
         production_atoms_s=g_b * Mss * Np,
         loss_exchange=(Nt / G) * g_t, loss_capacity=(Nt / Np) * P["T_b_s"] * g_t,
         t_h=[x / 3600.0 for x in t], P_pump=pp, P_target=pt,
-        t_on_h=t_on / 3600.0,
+        paper=paper,
+        zero_t_s=tz, zero_P_pump=zp, zero_P_target=zt, shut_P_pump=sp, shut_P_target=st,
         warnings=warnings,
     )
 
@@ -504,8 +562,8 @@ DEFAULTS = dict(
     engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
-    M_ss=50.0, T_b_s=150.0, T1p_off_h=1.0, T1t_h=10.0,
-    run_h=24.0, on_h=24.0,
+    M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
+    on_h=24.0,
 )
 
 if __name__ == "__main__" and __import__("sys").platform != "emscripten":
@@ -517,3 +575,4 @@ if __name__ == "__main__" and __import__("sys").platform != "emscripten":
         print(mode, "%.2fs" % (time.time() - t0),
               {k: r[k] for k in ("mdot_mg_h", "Re", "G", "G_diff", "tau_x_target_s", "ss_pump", "ss_target",
                                   "times_s", "t90_target_s", "heat_mW", "warnings")})
+        print("  paper", {k: v for k, v in r["paper"].items()})
