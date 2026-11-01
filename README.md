@@ -43,3 +43,9 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000.
 
+## Author
+Written in 2026 by J. Maxwell (https://orcid.org/0000-0003-2710-4646).
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
