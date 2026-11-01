@@ -825,12 +825,12 @@ async function bootPython() {
   }
   if (!MODEL_PY) return fallBack(errors);
   try {
-    if (!SELF_HOSTED) { if (typeof window.loadPyodide !== "function") await loadScript(CDN_FULL + "pyodide.js"); }
+    if (!SELF_HOSTED) { if (typeof window.loadPyodide !== "function") await withTimeout(loadScript(CDN_FULL + "pyodide.js"), 30000, "pyodide.js download"); }
     else for (const f of ["pyodide.asm.js", "pyodide.js"]) {
       const ready = () => f === "pyodide.js" ? typeof window.loadPyodide === "function" : typeof window._createPyodideModule === "function";
       for (const base of [CDN_NPM, new URL("pyodide/", location.href).href]) {
         if (ready()) break;
-        try { await loadScript(base + f); } catch (e) { errors.push(e.message); }
+        try { await withTimeout(loadScript(base + f), 30000, f + " download"); } catch (e) { errors.push(e.message); }
       }
     }
   } catch (e) { errors.push(e.message); }
@@ -851,6 +851,7 @@ async function bootPython() {
             return origFetch.apply(this, arguments);
           };
         }
+        setEngine("loading", "Starting Python…", "Downloading and starting the Pyodide runtime from " + indexURL);
         const inst = await withTimeout(window.loadPyodide({ indexURL, stdout: () => {}, stderr: () => {} }), 60000, "Pyodide start");
         window.fetch = origFetch;
         inst.runPython(MODEL_PY);
