@@ -59,9 +59,17 @@ h1, h2, h3, .label, .seg button, .chip { font-family: var(--font-display); }
 h1 { font-size: 30px; line-height: 1.05; font-weight: 700; margin: 0; letter-spacing: 0.005em; text-wrap: balance; }
 h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin: 0; }
 .num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
-header .sub { color: var(--muted); margin: 6px 0 0; max-width: 70ch; }
-header .refs { font-size: 13.5px; }
+header { display: grid; grid-template-columns: minmax(0, 70ch) minmax(0, 1fr); grid-template-areas: "title actions" "intro refs"; gap: 6px 40px; align-items: end; }
+header h1 { grid-area: title; }
+header .head-actions { grid-area: actions; justify-self: end; }
+header .sub { color: var(--muted); margin: 0; max-width: 70ch; align-self: start; }
+header .intro { grid-area: intro; }
+header .refs { grid-area: refs; font-size: 13.5px; max-width: 60ch; padding-left: 16px; border-left: 2px solid var(--line); }
+@media (max-width: 1040px) {
+  header { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "intro" "refs" "actions"; }
+  header .head-actions { justify-self: start; margin-top: 6px; }
+  header .refs { padding-left: 0; border-left: 0; }
+}
 header .refs a, .notes a { color: var(--accent); }
 .engine {
   display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
@@ -263,11 +271,9 @@ footer.site a { color: var(--accent); }
 <body>
 <div class="app">
   <header>
-    <div>
-      <h1>³He Two-Cell Exchange</h1>
-      <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and the Formulas tab lays out its equations step by step.</p>
-      <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
-    </div>
+    <h1>³He Two-Cell Exchange</h1>
+    <p class="sub intro">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and the Formulas tab lays out its equations step by step.</p>
+    <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
     <div class="head-actions">
       <button class="btn ghost" type="button" id="saveToggle" aria-expanded="false" aria-controls="savePanel">Save / load</button>
       <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
