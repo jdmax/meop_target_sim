@@ -31,6 +31,9 @@ jobs:
           # Cache-bust the JS port so a browser never pairs a new page with a stale cached model
           sed -i "s/he3_model\.js?v=dev/he3_model.js?v=${GITHUB_SHA::8}/" _site/index.html
           grep -q "he3_model.js?v=${GITHUB_SHA::8}" _site/index.html
+          # Transfer-tube joint stress analysis (static page, results embedded)
+          mkdir -p _site/glass_joint
+          cp glass_joint/index.html _site/glass_joint/
 
       - uses: actions/upload-pages-artifact@v3
         with:
