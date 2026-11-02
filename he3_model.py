@@ -21,6 +21,9 @@ Cooler stages (stage_loads): the intercept, 300 K radiation onto the shield and 
 loads go to the first stage; the cold clamps and target cell, an engine clamp that
 removes heat, shield radiation onto the cold surfaces, direct radiation down the
 bores and other loads go to the second stage. Radiation is sigma eps A (Th^4 - Tc^4).
+With the PT420 map on (cooler_solve), the first stage floats at the temperature the
+Cryomech capacity chart gives for the two loads, and the second stage is held at the
+set point Tc by a trim heater, or floats above it if the loads alone keep it warmer.
 
 Polarization (exact solution of the linear 2x2 system, piecewise in time):
   dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          laser and discharge on
@@ -465,22 +468,76 @@ def stage_loads(P, heat, tube, n_legs):
     rad1 = SIGMA * P["eps_shield"] * P["A_shield_m2"] * (Th ** 4 - T1 ** 4)
     rad2 = SIGMA * P["eps_cold"] * P["A_cold_cm2"] * 1e-4 * (T1 ** 4 - Tc ** 4)
     bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2.0, P["length_cm"] * 0.01) * (Th ** 4 - Tc ** 4)
-    first = dict(T=T1, intercept=max(0.0, q_int), radiation=rad1, other=P["other1_W"], capacity=P["cap1_W"])
+    first = dict(T=T1, intercept=max(0.0, q_int), radiation=rad1, other=P["other1_W"])
     first["total"] = first["intercept"] + rad1 + first["other"]
     second = dict(T=Tc, conduction=heat["cold"], engine=max(0.0, q_eng), radiation=rad2, bore=bore,
-                  other=P["other2_mW"] * 1e-3, capacity=P["cap2_W"])
+                  other=P["other2_mW"] * 1e-3)
     second["total"] = second["conduction"] + second["engine"] + rad2 + bore + second["other"]
     return dict(first=first, second=second,
                 intercept_heater=max(0.0, -q_int), engine_heater=max(0.0, -q_eng), warm_supply=-heat["warm"])
 
 
+# PT420-RM reference capacity curve (Cryomech, 50 and 60 Hz), read off the published chart:
+# stage temperatures [K] for first-stage loads PT420_Q1 (columns) and second-stage loads PT420_Q2 (rows) [W].
+PT420_Q1 = [0.0, 25.0, 50.0, 75.0, 100.0]
+PT420_Q2 = [0.0, 0.5, 1.8, 5.0, 8.0, 10.0]
+PT420_T1 = [[28.6, 33.5, 40.2, 49.4, 62.7],
+            [29.0, 34.2, 40.9, 50.3, 65.5],
+            [29.7, 36.1, 42.9, 52.4, 68.0],
+            [32.5, 39.3, 47.7, 60.7, 71.2],
+            [35.2, 42.9, 54.5, 64.3, 74.0],
+            [37.1, 46.0, 56.1, 65.1, 76.7]]
+PT420_T2 = [[2.31, 2.28, 2.34, 2.63, 2.70],
+            [3.02, 2.99, 2.99, 3.11, 2.89],
+            [4.43, 4.34, 4.17, 4.24, 4.08],
+            [7.35, 6.87, 6.52, 6.81, 7.39],
+            [9.76, 9.44, 9.51, 9.63, 9.76],
+            [10.69, 10.63, 10.73, 10.60, 11.53]]
+
+
+def seg(xs, x):
+    """Interval i of the increasing list xs that holds x (the end intervals extend outward), and the fraction along it."""
+    i = 0
+    while i < len(xs) - 2 and x > xs[i + 1]:
+        i += 1
+    return i, (x - xs[i]) / (xs[i + 1] - xs[i])
+
+
+def pt_map(Q1, Q2, sc):
+    """Stage temperatures (T1, T2) with loads Q1, Q2 [W] on a cooler at fraction sc of the reference
+    capacity: bilinear in the chart grid, extrapolated past its edges."""
+    i, u = seg(PT420_Q1, Q1 / sc)
+    j, v = seg(PT420_Q2, Q2 / sc)
+
+    def bil(M):
+        a = M[j][i] + u * (M[j][i + 1] - M[j][i])
+        b = M[j + 1][i] + u * (M[j + 1][i + 1] - M[j + 1][i])
+        return a + v * (b - a)
+    return bil(PT420_T1), bil(PT420_T2)
+
+
+def pt_load2(Q1, T2, sc):
+    """Second-stage load that puts the second stage at T2 with Q1 on the first stage (negative if out of reach)."""
+    i, u = seg(PT420_Q1, Q1 / sc)
+    col = [r[i] + u * (r[i + 1] - r[i]) for r in PT420_T2]     # rises with Q2 at every Q1
+    j, v = seg(col, T2)
+    return sc * (PT420_Q2[j] + v * (PT420_Q2[j + 1] - PT420_Q2[j]))
+
+
+def pt_load1(Q2, T1, sc):
+    """First-stage load that puts the first stage at T1 with Q2 on the second stage."""
+    j, v = seg(PT420_Q2, Q2 / sc)
+    row = [a + v * (b - a) for a, b in zip(PT420_T1[j], PT420_T1[j + 1])]
+    i, u = seg(row, T1)
+    return sc * (PT420_Q1[i] + u * (PT420_Q1[i + 1] - PT420_Q1[i]))
+
+
 # ------------------------------------------------------------------ entry
-def compute(P):
+def thermal(P):
+    """Tube profiles, loop flow and clamp heats with the target cell at P["Tc"]."""
     p = P["p_mbar"] * 100.0
-    Tc, Th = P["Tc"], P["Th"]
     tube = Tube(P["id_mm"] * 1e-3, P["wall_mm"] * 1e-3)
     legs, errs = build_legs(P)
-
     if P["mode"] == "single":
         mdot = 0.0
     else:
@@ -489,6 +546,66 @@ def compute(P):
     for i, leg in enumerate(legs):
         md = mdot if i == 0 else -mdot
         sol.append(solve_leg(leg, tube, p, md, want_profile=True))
+    heat = dict(cold=0.0, intercept=0.0, engine=0.0, warm=0.0)
+    for s in sol:
+        for kind, Tn, q in s["heats"]:
+            heat[kind] += q
+    return tube, legs, errs, mdot, sol, heat
+
+
+def cooler_solve(P):
+    """Stage temperatures and loads on the PT420.
+    Map on: the first stage floats on the map; the second stage is held at the set point P["Tc"] by
+    a trim heater, or floats above it when the loads alone keep it warmer. The tube solution depends
+    on Tc, so it is redone, with secant steps, until Tc settles; the loads change little with Tc.
+    Map off: Tc and T_shield are taken as given, and the map gives each stage's capacity there.
+    Returns (P with the stage temperatures, the tube solution, the stage loads, the cooler state)."""
+    sc = P["cooler_pct"] / 100.0
+    Tset = P["Tc"]
+    if not P["cooler_map"]:
+        th = thermal(P)
+        st = stage_loads(P, th[5], th[0], len(th[1]))
+        Q1, Q2 = st["first"]["total"], st["second"]["total"]
+        T1f, T2f = pt_map(Q1, Q2, sc)
+        st["first"]["capacity"] = pt_load1(Q2, P["T_shield"], sc)
+        st["second"]["capacity"] = pt_load2(Q1, Tset, sc)
+        cooler = dict(map=False, T1=P["T_shield"], T2=Tset, set=Tset, trim=0.0,
+                      held=Q1 <= st["first"]["capacity"] and Q2 <= st["second"]["capacity"],
+                      T1_free=T1f, T2_free=T2f, Q1=Q1, Q2=Q2,
+                      off_map=Q1 / sc > PT420_Q1[-1] or Q2 / sc > PT420_Q2[-1])
+        return P, th, st, cooler
+    Tc, T1, prev = Tset, 40.0, None
+    for _ in range(30):
+        th = thermal(dict(P, Tc=Tc))
+        for _ in range(100):
+            st = stage_loads(dict(P, Tc=Tc, T_shield=T1), th[5], th[0], len(th[1]))
+            Q1, Q2 = st["first"]["total"], st["second"]["total"]
+            T1f, T2f = pt_map(Q1, Q2, sc)
+            cap2 = pt_load2(Q1, Tset, sc)
+            trim = cap2 - Q2 if T2f < Tset else 0.0
+            T1n, T2 = pt_map(Q1, Q2 + trim, sc) if trim > 0 else (T1f, T2f)
+            if abs(T1n - T1) < 1e-9:
+                break
+            T1 = T1n
+        r = T2 - Tc
+        if abs(r) < 1e-7:
+            break
+        Tn = Tc - r * (Tc - prev[0]) / (r - prev[1]) if prev and r != prev[1] else T2   # secant on T2(Tc) - Tc
+        prev = (Tc, r)
+        Tc = max(Tset, Tn)
+    st["first"]["capacity"] = None
+    st["second"]["capacity"] = cap2
+    cooler = dict(map=True, T1=T1, T2=Tc, set=Tset, trim=trim, held=T2f <= Tset,
+                  T1_free=T1f, T2_free=T2f, Q1=Q1, Q2=Q2,
+                  off_map=Q1 / sc > PT420_Q1[-1] or (Q2 + trim) / sc > PT420_Q2[-1])
+    return dict(P, Tc=Tc, T_shield=T1), th, st, cooler
+
+
+def compute(P):
+    P, th, stages, cooler = cooler_solve(P)
+    tube, legs, errs, mdot, sol, heat = th
+    p = P["p_mbar"] * 100.0
+    Tc, Th = P["Tc"], P["Th"]
 
     G_diff = sum(1.0 / s["R_diff"] for s in sol)
     G_conv = abs(mdot) / M_ATOM
@@ -496,12 +613,6 @@ def compute(P):
 
     Np = n_num(Th, p) * P["V_pump_cc"] * 1e-6
     Nt = n_num(Tc, p) * P["V_target_cc"] * 1e-6
-
-    heat = dict(cold=0.0, intercept=0.0, engine=0.0, warm=0.0)
-    for s in sol:
-        for kind, Tn, q in s["heats"]:
-            heat[kind] += q
-    stages = stage_loads(P, heat, tube, len(legs))
 
     Mss = P["M_ss"] / 100.0
     g_b = 1.0 / P["T_b_s"]
@@ -554,9 +665,28 @@ def compute(P):
     Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
     if Re > 50:
         warnings.append("Reynolds number %.0f at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow." % Re)
-    for name, stage in (("Second-stage", stages["second"]), ("First-stage", stages["first"])):
-        if stage["total"] > stage["capacity"]:
-            warnings.append("%s load of %.3g W exceeds the cooler's %.3g W at that stage." % (name, stage["total"], stage["capacity"]))
+    if cooler["map"]:
+        if not cooler["held"]:
+            cap2 = stages["second"]["capacity"]
+            if cap2 > 0:
+                warnings.append("The PT420 can't hold the target at %.3g K: it gives %.3g W there with %.3g W on the first stage, short of the %.3g W load, so the target runs at %.3g K."
+                                % (cooler["set"], cap2, cooler["Q1"], cooler["Q2"], Tc))
+            else:
+                warnings.append("The PT420 can't reach %.3g K with %.3g W on the first stage, so the target runs at %.3g K."
+                                % (cooler["set"], cooler["Q1"], Tc))
+    else:
+        for name, stage, T_free in (("Second", stages["second"], cooler["T2_free"]), ("First", stages["first"], cooler["T1_free"])):
+            if stage["total"] > stage["capacity"]:
+                if stage["capacity"] > 0:
+                    warnings.append("%s-stage load of %.3g W exceeds the PT420's %.3g W at %.3g K; with these loads it settles at %.3g K."
+                                    % (name, stage["total"], stage["capacity"], stage["T"], T_free))
+                else:
+                    warnings.append("The PT420 can't reach %.3g K on the %s stage with these loads; it settles at %.3g K."
+                                    % (stage["T"], name.lower(), T_free))
+    if cooler["off_map"]:
+        sc = P["cooler_pct"] / 100.0
+        warnings.append("The loads run past the edge of the PT420 chart (%.3g W on the first stage, %.3g W on the second), so the stage temperatures are extrapolated."
+                        % (PT420_Q1[-1] * sc, PT420_Q2[-1] * sc))
     if any(s["clamped"] for s in sol):
         warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
 
@@ -570,6 +700,7 @@ def compute(P):
         tau_x_target_s=Nt / G, tau_x_pump_s=Np / G,
         heat_mW={k: v * 1e3 for k, v in heat.items()},
         stages=stages,
+        Tc=Tc, T_shield=P["T_shield"], cooler=cooler,
         legs=[dict(profile=s["profile"], length_cm=s["length"] * 100,
                    nodes=[[n[0], n[1] * 100, n[2]] for n in leg["nodes"]],
                    free_cm=[f * 100 for f in leg["free"]],
@@ -604,7 +735,7 @@ DEFAULTS = dict(
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,
     A_cold_cm2=300.0, eps_cold=0.05, other2_mW=0.0,
-    cap1_W=55.0, cap2_W=2.0,
+    cooler_map=True, cooler_pct=100.0,
 )
 
 if __name__ == "__main__" and __import__("sys").platform != "emscripten":
@@ -618,3 +749,4 @@ if __name__ == "__main__" and __import__("sys").platform != "emscripten":
                                   "times_s", "t90_target_s", "heat_mW", "warnings")})
         print("  paper", {k: v for k, v in r["paper"].items()})
         print("  stages", r["stages"])
+        print("  cooler", r["cooler"])
