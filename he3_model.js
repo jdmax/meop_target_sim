@@ -234,13 +234,19 @@
             t.map(x => amp.a_lt * Math.exp(-rl * x) - amp.a_st * Math.exp(-rs * x))];
   }
 
-  // geometry in the bore: a tube can't rise more than its length; horizontal cylindrical cells [cm, cm^2]
-  const rise_cm = P => Math.min(P.rise_cm, P.length_cm);
+  // Horizontal cylindrical cells in the solenoid bore [cm, cm^2]: the target cell centred on the beam axis and at z = 0,
+  // the pumping cell upstream (downstream end z_pump_cm before the centre, axis y_pump_cm above the beam). The tubes join
+  // the facing end faces; the pumping cell's top and the target cell, each with half the allowance, must fit the bore's radius.
   function cell_geom(P) {
     const d_t = 2 * Math.sqrt(P.V_target_cc / (Math.PI * P.L_target_cm)), d_p = 2 * Math.sqrt(P.V_pump_cc / (Math.PI * P.L_pump_cm));
-    const A_t = Math.PI * d_t * P.L_target_cm + 0.5 * Math.PI * d_t * d_t, stack = d_t + rise_cm(P) + d_p + P.allow_cm;
-    return { d_target_cm: d_t, d_pump_cm: d_p, A_target_cm2: A_t, rise_cm: rise_cm(P), stack_cm: stack, bore_cm: P.bore_cm, fits: stack <= P.bore_cm };
+    const A_t = Math.PI * d_t * P.L_target_cm + 0.5 * Math.PI * d_t * d_t;
+    const rise = P.y_pump_cm, gap = P.z_pump_cm - 0.5 * P.L_target_cm, straight = Math.hypot(gap, rise);
+    const top = P.y_pump_cm + 0.5 * d_p + 0.5 * P.allow_cm, side = 0.5 * (d_t + P.allow_cm), radius = 0.5 * P.bore_cm;
+    return { d_target_cm: d_t, d_pump_cm: d_p, A_target_cm2: A_t, rise_cm: rise, gap_cm: gap, straight_cm: straight,
+      top_cm: top, side_cm: side, radius_cm: radius, fits: top <= radius && side <= radius,
+      overlap: gap < 0 && P.y_pump_cm - 0.5 * d_p < 0.5 * d_t, below_beam: P.y_pump_cm < 0.5 * d_p };
   }
+  const slope = P => Math.min(1, cell_geom(P).rise_cm / P.length_cm);   // each tube a straight, uniform slope
   function disk_view(r, L) {
     const R = r / L, X = 2 + 1 / (R * R);
     return 2 / (X + Math.sqrt(X * X - 4));
@@ -293,7 +299,7 @@
   function thermal(P) {
     const p = P.p_mbar * 100, tube = Tube(P.id_mm * 1e-3, P.wall_mm * 1e-3);
     const [legs, errs] = build_legs(P);
-    const mdot = P.mode === "single" ? 0 : thermosiphon(legs[0], legs[1], tube, p, rise_cm(P) / P.length_cm);
+    const mdot = P.mode === "single" ? 0 : thermosiphon(legs[0], legs[1], tube, p, slope(P));
     const sol = legs.map((leg, i) => solve_leg(leg, tube, p, i === 0 ? mdot : -mdot, true));
     const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
@@ -396,10 +402,15 @@
     if (P.mode === "loop" && mdot < 0)
       warnings.push("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.");
     const fit = cell_geom(P);
-    if (P.rise_cm > P.length_cm)
-      warnings.push(`A tube can't rise more than its length, so the tubes are taken as vertical: the rise is ${g3(P.length_cm)} cm.`);
-    if (!fit.fits)
-      warnings.push(`The stack is ${g3(fit.stack_cm)} cm tall (target cell ${g3(fit.d_target_cm)} cm, rise ${g3(fit.rise_cm)} cm, pumping cell ${g3(fit.d_pump_cm)} cm, walls, shield and OVC ${g3(P.allow_cm)} cm), more than the ${g3(P.bore_cm)} cm bore.`);
+    if (P.length_cm < fit.straight_cm - 1e-9)
+      warnings.push(`The tubes are shorter than the ${g3(fit.straight_cm)} cm straight line between the cells' end faces.`);
+    if (fit.top_cm > fit.radius_cm)
+      warnings.push(`The pumping cell's top, with its walls, shield and OVC, reaches ${g3(fit.top_cm)} cm above the beam axis (axis at ${g3(P.y_pump_cm)} cm, half the cell ${g3(0.5 * fit.d_pump_cm)} cm, half the allowance ${g3(0.5 * P.allow_cm)} cm), past the bore's ${g3(fit.radius_cm)} cm radius.`);
+    if (fit.side_cm > fit.radius_cm)
+      warnings.push(`The target cell with its walls, shield and OVC reaches ${g3(fit.side_cm)} cm from the beam axis, past the bore's ${g3(fit.radius_cm)} cm radius.`);
+    if (fit.overlap)
+      warnings.push("The pumping cell overlaps the target cell: it starts downstream of the target's upstream end but sits too low to clear it.");
+    if (fit.below_beam) warnings.push("The pumping cell reaches below the beam axis.");
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,

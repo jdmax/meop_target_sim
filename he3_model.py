@@ -462,20 +462,29 @@ def relax_curves(sys2, amp, t):
 
 
 # ------------------------------------------------------------------ geometry in the bore
-def rise_cm(P):
-    """Vertical rise between the cells [cm]; a tube can't rise more than its length."""
-    return min(P["rise_cm"], P["length_cm"])
-
-
 def cell_geom(P):
-    """Horizontal cylindrical cells [cm, cm^2]: diameters from volume and length, the target cell's
-    surface, and the height of the stack (target cell, rise, pumping cell, walls/shield/OVC) in the bore."""
+    """Horizontal cylindrical cells in the solenoid bore [cm, cm^2]. The target cell is centred on the bore axis (the
+    beam) and on the solenoid centre, z = 0. The pumping cell sits upstream, its downstream end z_pump_cm before the
+    centre and its axis y_pump_cm above the beam. The tubes join the cells' facing end faces, so they rise
+    y_pump_cm over an axial gap z_pump_cm - L_target/2 and can't be shorter than the straight line between them.
+    The pumping cell's top and the target cell, each with half the allowance, must fit within the bore's radius."""
     d_t = 2.0 * math.sqrt(P["V_target_cc"] / (math.pi * P["L_target_cm"]))
     d_p = 2.0 * math.sqrt(P["V_pump_cc"] / (math.pi * P["L_pump_cm"]))
     A_t = math.pi * d_t * P["L_target_cm"] + 0.5 * math.pi * d_t * d_t
-    stack = d_t + rise_cm(P) + d_p + P["allow_cm"]
-    return dict(d_target_cm=d_t, d_pump_cm=d_p, A_target_cm2=A_t, rise_cm=rise_cm(P),
-                stack_cm=stack, bore_cm=P["bore_cm"], fits=stack <= P["bore_cm"])
+    rise = P["y_pump_cm"]
+    gap = P["z_pump_cm"] - 0.5 * P["L_target_cm"]
+    straight = math.hypot(gap, rise)
+    top = P["y_pump_cm"] + 0.5 * d_p + 0.5 * P["allow_cm"]
+    side = 0.5 * (d_t + P["allow_cm"])
+    radius = 0.5 * P["bore_cm"]
+    return dict(d_target_cm=d_t, d_pump_cm=d_p, A_target_cm2=A_t, rise_cm=rise, gap_cm=gap, straight_cm=straight,
+                top_cm=top, side_cm=side, radius_cm=radius, fits=top <= radius and side <= radius,
+                overlap=gap < 0 and P["y_pump_cm"] - 0.5 * d_p < 0.5 * d_t, below_beam=P["y_pump_cm"] < 0.5 * d_p)
+
+
+def slope(P):
+    """rise / length of the tubes, each taken as a straight, uniform slope."""
+    return min(1.0, cell_geom(P)["rise_cm"] / P["length_cm"])
 
 
 # ------------------------------------------------------------------ cooler stages
@@ -580,7 +589,7 @@ def thermal(P):
     if P["mode"] == "single":
         mdot = 0.0
     else:
-        mdot = thermosiphon(legs[0], legs[1], tube, p, rise_cm(P) / P["length_cm"])
+        mdot = thermosiphon(legs[0], legs[1], tube, p, slope(P))
     sol = []
     for i, leg in enumerate(legs):
         md = mdot if i == 0 else -mdot
@@ -737,11 +746,18 @@ def compute(P):
     if P["mode"] == "loop" and mdot < 0:
         warnings.append("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.")
     fit = cell_geom(P)
-    if P["rise_cm"] > P["length_cm"]:
-        warnings.append("A tube can't rise more than its length, so the tubes are taken as vertical: the rise is %.3g cm." % P["length_cm"])
-    if not fit["fits"]:
-        warnings.append("The stack is %.3g cm tall (target cell %.3g cm, rise %.3g cm, pumping cell %.3g cm, walls, shield and OVC %.3g cm), more than the %.3g cm bore."
-                        % (fit["stack_cm"], fit["d_target_cm"], fit["rise_cm"], fit["d_pump_cm"], P["allow_cm"], P["bore_cm"]))
+    if P["length_cm"] < fit["straight_cm"] - 1e-9:
+        warnings.append("The tubes are shorter than the %.3g cm straight line between the cells' end faces." % fit["straight_cm"])
+    if fit["top_cm"] > fit["radius_cm"]:
+        warnings.append("The pumping cell's top, with its walls, shield and OVC, reaches %.3g cm above the beam axis (axis at %.3g cm, half the cell %.3g cm, half the allowance %.3g cm), past the bore's %.3g cm radius."
+                        % (fit["top_cm"], P["y_pump_cm"], 0.5 * fit["d_pump_cm"], 0.5 * P["allow_cm"], fit["radius_cm"]))
+    if fit["side_cm"] > fit["radius_cm"]:
+        warnings.append("The target cell with its walls, shield and OVC reaches %.3g cm from the beam axis, past the bore's %.3g cm radius."
+                        % (fit["side_cm"], fit["radius_cm"]))
+    if fit["overlap"]:
+        warnings.append("The pumping cell overlaps the target cell: it starts downstream of the target's upstream end but sits too low to clear it.")
+    if fit["below_beam"]:
+        warnings.append("The pumping cell reaches below the beam axis.")
     if any(s["clamped"] for s in sol):
         warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
 
@@ -782,11 +798,11 @@ def run(params_json):
 
 DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
-    id_mm=8.0, wall_mm=1.0, length_cm=10.0, rise_cm=10.0,
+    id_mm=8.0, wall_mm=1.0, length_cm=10.0,
     engine=True, engine_stage=False, engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0, L_pump_cm=10.0, L_target_cm=20.0,
-    bore_cm=10.0, allow_cm=2.0,
+    z_pump_cm=10.0, y_pump_cm=10.0, bore_cm=10.0, allow_cm=2.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,

@@ -314,7 +314,7 @@ footer.site a { color: var(--accent); }
       <div class="chips" id="presets" aria-label="Presets"></div>
       <fieldset id="fs-cells"><legend>Gas and cells</legend></fieldset>
       <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
-      <fieldset id="fs-bore"><legend>Fit in the bore</legend></fieldset>
+      <fieldset id="fs-bore"><legend>Position in the solenoid bore</legend></fieldset>
       <fieldset id="fs-loop"><legend>Riser engine</legend></fieldset>
       <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
       <fieldset id="fs-pump"><legend>Pumping (sealed-cell values) and relaxation</legend></fieldset>
@@ -456,7 +456,7 @@ footer.site a { color: var(--accent); }
           <h2 id="fxHead">The model, step by step</h2>
           <button class="btn ghost" type="button" id="fxAll">Open all</button>
         </div>
-        <p class="hint fx-intro">Every step of the model in the order it runs, with where each equation applies and the numbers it gives for the current settings. The cooler steps (1–5) set the target temperature T<sub>c</sub>; the rate equations (6–11) then use it; step 12 sizes the cells and checks they fit in the bore. Equation numbers refer to <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</p>
+        <p class="hint fx-intro">Every step of the model in the order it runs, with where each equation applies and the numbers it gives for the current settings. The cooler steps (1–5) set the target temperature T<sub>c</sub>; the rate equations (6–11) then use it; step 12 places the cells in the solenoid bore and checks they fit. Equation numbers refer to <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</p>
         <div class="fx" id="fx"></div>
         <ul class="notes">
           <li id="srcStatus">Waiting for Python…</li>
@@ -538,11 +538,11 @@ function fillRich(ctx, s, x, y) {     // honours ctx.textAlign; subscripts drop 
 /* ---------------------------------------------------------------- params */
 const DEFAULTS = {
   mode: "loop", p_mbar: 100, Tc: 5, Th: 300,
-  id_mm: 8, wall_mm: 1, length_cm: 10, rise_cm: 10,
+  id_mm: 8, wall_mm: 1, length_cm: 10,
   engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25,
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100, L_pump_cm: 10, L_target_cm: 20,
-  bore_cm: 10, allow_cm: 2,
+  z_pump_cm: 10, y_pump_cm: 10, bore_cm: 10, allow_cm: 2,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
   on_h: 24,
   T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
@@ -560,7 +560,8 @@ const DEFS = [
   { fs: "tubes", key: "id_mm", label: "Inner diameter", unit: "mm", min: 2, max: 16, dp: 1 },
   { fs: "tubes", key: "wall_mm", label: "Wall thickness", unit: "mm", min: 0.5, max: 2.5, dp: 2 },
   { fs: "tubes", key: "length_cm", label: "Tube length, cell to cell", unit: "cm", min: 2, max: 15, dp: 1 },
-  { fs: "tubes", key: "rise_cm", label: "Vertical rise between the cells", unit: "cm", min: 0.5, max: 15, dp: 1 },
+  { fs: "bore", key: "z_pump_cm", label: "Pumping cell, downstream end upstream of the solenoid centre", unit: "cm", min: 0, max: 40, dp: 1 },
+  { fs: "bore", key: "y_pump_cm", label: "Pumping cell axis, height above the beam", unit: "cm", min: 0, max: 15, dp: 2 },
   { fs: "bore", key: "bore_cm", label: "Bore diameter", unit: "cm", min: 5, max: 30, dp: 1 },
   { fs: "bore", key: "allow_cm", label: "Cell walls, shield and OVC, top and bottom together", unit: "cm", min: 0, max: 6, dp: 2 },
   { fs: "loop", key: "engine", label: "Engine clamp on the riser", toggle: true },
@@ -587,22 +588,25 @@ const DEFS = [
   { fs: "cooler", key: "cooler_pct", label: "Cooler performance, share of the reference chart", unit: "%", min: 30, max: 130, dp: 0 },
 ];
 const PRESETS = [
-  { name: "CLAS12 concept", p: { mode: "loop", V_pump_cc: 200, L_pump_cm: 25, Th: 293, M_ss: 60, V_target_cc: 100, L_target_cm: 20,
-    id_mm: 8, wall_mm: 1, length_cm: 4, rise_cm: 2, bore_cm: 10, allow_cm: 2,
-    engine: true, engine_stage: true, engine_cm: 1, gap_cm: 0.3, intercept: true, T_int: 45, s_int_cm: 2.6 } },
-  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, rise_cm: 10, intercept: false } },
-  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, rise_cm: 10, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
+  { name: "CLAS12 concept", p: { mode: "loop", V_pump_cc: 200, L_pump_cm: 21, Th: 293, M_ss: 60, V_target_cc: 100, L_target_cm: 20,
+    id_mm: 8, wall_mm: 1, length_cm: 6, z_pump_cm: 15, y_pump_cm: 2.75, bore_cm: 10, allow_cm: 1,
+    engine: true, engine_stage: true, engine_cm: 1, gap_cm: 0.3, intercept: true, T_int: 45, s_int_cm: 3.5 } },
+  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, L_target_cm: 20, z_pump_cm: 10, y_pump_cm: 10, intercept: false } },
+  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, L_target_cm: 20, z_pump_cm: 10, y_pump_cm: 10, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
   { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true } },
   { name: "Loop, engine off", p: { mode: "loop", engine: false } },
   { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },
   { name: "Defaults", p: DEFAULTS },
 ];
 
-// Settings saved before the cell dimensions had vertical tubes and a cold surface that included the target cell itself.
+// Settings saved before the cells had positions in the bore had the pumping cell straight above the target's upstream end:
+// vertical tubes rising their length (or the rise_cm saved with them). The oldest ones counted the target cell itself in the
+// cold surface, which now adds the cell's own surface.
 function migrateFlat(src, next) {
-  if (!("length_cm" in src) || "rise_cm" in src) return false;
-  next.rise_cm = next.length_cm;
-  if ("A_cold_cm2" in src) next.A_cold_cm2 = Math.max(1, next.A_cold_cm2 - He3ModelJS.props.cell_geom(next).A_target_cm2);
+  if (!("length_cm" in src) || "y_pump_cm" in src) return false;
+  next.z_pump_cm = next.L_target_cm / 2;
+  next.y_pump_cm = typeof src.rise_cm === "number" ? Math.min(src.rise_cm, next.length_cm) : next.length_cm;
+  if ("A_cold_cm2" in src && !("rise_cm" in src)) next.A_cold_cm2 = Math.max(1, next.A_cold_cm2 - He3ModelJS.props.cell_geom(next).A_target_cm2);
   return true;
 }
 let params = Object.assign({}, DEFAULTS);
@@ -651,7 +655,7 @@ $("fs-pump").insertAdjacentHTML("beforeend", '<p class="hint" id="sealedHint"></
 $("fs-cells").insertAdjacentHTML("beforeend", '<p class="hint" id="tcHint"></p>');
 $("fs-loop").insertAdjacentHTML("beforeend", '<p class="hint" id="engineHint"></p>');
 $("fs-bore").insertAdjacentHTML("beforeend", '<p class="hint" id="boreHint"></p>');
-$("fs-tubes").insertAdjacentHTML("beforeend", '<p class="hint">The cells are horizontal; each tube climbs the rise between them as a straight slope, so only the rise drives the loop, while the full length sets conduction and diffusion.</p>');
+$("fs-tubes").insertAdjacentHTML("beforeend", "<p class=\"hint\">The tubes join the cells' facing end faces and climb the pumping cell's height above the beam as a straight slope: only that rise drives the loop, while the full length sets conduction and diffusion. A tube can't be shorter than the straight line between the end faces.</p>");
 $("fs-shield").insertAdjacentHTML("beforeend", '<p class="hint" id="shieldHint"></p>');
 $("fs-cooler").insertAdjacentHTML("beforeend", '<p class="hint">With the map on, the first stage floats wherever the two loads put it and a trim heater holds the second stage at the target set point. With it off, both temperatures are fixed and the map gives the capacity there.</p>');
 const tcLabel = () => params.cooler_map ? "Target set point" : "Target temperature";
@@ -712,9 +716,10 @@ function computePy() {
 }
 let pending = null;
 function changed(final) {
-  if (params.rise_cm > params.length_cm) {        // a tube can't rise more than its length: the rise follows a shorter tube down
-    params.rise_cm = params.length_cm;
-    inputs.rise_cm.num.value = params.rise_cm; inputs.rise_cm.rng.value = toSlider(inputs.rise_cm.d, params.rise_cm);
+  const reach = He3ModelJS.props.cell_geom(params).straight_cm;   // the tubes must reach between the cells' end faces
+  if (params.length_cm < reach - 1e-9) {
+    params.length_cm = Math.min(inputs.length_cm.d.max, Math.ceil(reach * 10 - 1e-9) / 10);
+    inputs.length_cm.num.value = params.length_cm; inputs.length_cm.rng.value = toSlider(inputs.length_cm.d, params.length_cm);
   }
   save();
   // Instant preview from the JS port while dragging, as long as it reproduces the Python model.
@@ -801,8 +806,11 @@ function show(res, source) {
   engineHint();
   const F = R.fit, bh = $("boreHint");
   bh.classList.toggle("bad", !F.fits);
-  bh.textContent = `Stack ${F.stack_cm.toFixed(1)} cm: target cell ${F.d_target_cm.toFixed(2)} cm across, rise ${+F.rise_cm.toFixed(2)} cm, pumping cell ${F.d_pump_cm.toFixed(2)} cm, ` +
-    `allowance ${params.allow_cm} cm. ` + (F.fits ? `Fits the ${params.bore_cm} cm bore with ${(params.bore_cm - F.stack_cm).toFixed(1)} cm to spare.` : `Too tall for the ${params.bore_cm} cm bore by ${(F.stack_cm - params.bore_cm).toFixed(1)} cm.`);
+  bh.textContent = `The target cell sits on the beam at the solenoid centre. The pumping cell, ${F.d_pump_cm.toFixed(2)} cm across, ` +
+    `starts ${params.z_pump_cm} cm upstream with its axis ${params.y_pump_cm} cm above the beam; its top and half the allowance reach ${F.top_cm.toFixed(2)} cm, ` +
+    (F.top_cm <= F.radius_cm ? `inside the ${F.radius_cm} cm radius by ${(F.radius_cm - F.top_cm).toFixed(2)} cm.` : `past the ${F.radius_cm} cm radius by ${(F.top_cm - F.radius_cm).toFixed(2)} cm.`) +
+    ` The tubes span ${F.gap_cm.toFixed(1)} cm along the axis and rise ${F.rise_cm} cm: ${F.straight_cm.toFixed(2)} cm in a straight line.` +
+    (F.side_cm > F.radius_cm ? " The target cell itself is too big for the bore." : "") + (F.overlap ? " The pumping cell overlaps the target cell." : "");
 
   $("sealedHint").innerHTML = richHTML(`Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`);
 
@@ -840,7 +848,7 @@ function show(res, source) {
     let d = Infinity;
     try {
       const js = computeJS();
-      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim, o.fit.stack_cm];
+      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim, o.fit.top_cm];
       const a = pick(R), b = pick(js);
       d = Math.max(...a.map((v, i) => Math.abs(v - b[i]) / Math.max(Math.abs(v), 1e-30)));
     } catch (e) {}
@@ -1165,26 +1173,33 @@ function updateSpins(arr, n, P, rate) {
     }
   }
 }
-/* Side view of the bore, to scale: the target cell along the beam, the pumping cell above it, and the tubes as the
-   straight slopes the model assumes. Positions are in cm, x downstream along the beam and y up from the target cell. */
-const SCENE_M = { l: 64, r: 74, t: 30, b: 60 };      // px margins: supply valve, beam arrow, pumping-cell label, labels below
+/* Side view of the solenoid bore, to scale: the target cell on the beam axis at the solenoid centre, the pumping cell upstream
+   and above it, and the tubes as the straight slopes the model assumes between their end faces. Positions are in cm:
+   x along the beam from the solenoid centre, y up from the beam axis. */
+const SCENE_M = { l: 64, r: 74, t: 30, b: 60 };      // px margins: supply valve, bore dimension, pumping-cell label, ruler and labels
 function sceneGeom(W, H) {
-  const P = params, F = R.fit, dt = F.d_target_cm, dp = F.d_pump_cm, h = F.rise_cm, L = P.length_cm;
-  const run = Math.sqrt(Math.max(0, L * L - h * h)), od = (P.id_mm + 2 * P.wall_mm) / 10, c = Math.max(1, od);
-  const loop = P.mode === "loop", xt = loop ? [c + od + 0.8, c] : [c];   // the riser meets the target downstream of the downcomer
-  const tubes = xt.map(x => ({ a: [x, dt], b: [x - run, dt + h] }));      // a: target end (s = 0), b: pumping-cell end (s = L)
-  const pr = Math.max(...tubes.map(t => t.b[0])) + c, al = P.allow_cm / 2;
-  const pump = { x0: pr - P.L_pump_cm, x1: pr, y0: dt + h, y1: dt + h + dp };
-  const target = { x0: 0, x1: P.L_target_cm, y0: 0, y1: dt };
-  const ovc = { x0: Math.min(0, pump.x0) - al, x1: target.x1 + al, y0: -al, y1: pump.y1 + al };
-  const mid = (ovc.y0 + ovc.y1) / 2, bore = { y0: mid - P.bore_cm / 2, y1: mid + P.bore_cm / 2 };
-  const shield = { x0: -al / 2, x1: target.x1 + al / 2, y0: -al / 2, y1: dt + Math.min(h / 2, al / 2) };
-  const xLo = ovc.x0, xHi = ovc.x1, yLo = Math.min(ovc.y0, bore.y0), yHi = Math.max(ovc.y1, bore.y1);
-  const s = Math.min(40, (W - SCENE_M.l - SCENE_M.r) / (xHi - xLo), (H - SCENE_M.t - SCENE_M.b) / (yHi - yLo));
-  const top = SCENE_M.t + Math.max(0, (H - SCENE_M.t - SCENE_M.b - (yHi - yLo) * s) / 2);   // centre a short drawing
+  const P = params, F = R.fit, rt = F.d_target_cm / 2, rp = F.d_pump_cm / 2, L = P.length_cm, al = P.allow_cm / 2;
+  const od = (P.id_mm + 2 * P.wall_mm) / 10, loop = P.mode === "loop";
+  const target = { x0: -P.L_target_cm / 2, x1: P.L_target_cm / 2, y0: -rt, y1: rt };
+  const pump = { x0: -P.z_pump_cm - P.L_pump_cm, x1: -P.z_pump_cm, y0: P.y_pump_cm - rp, y1: P.y_pump_cm + rp };
+  // the tubes join the facing end faces, side by side across the line between the face centres
+  const ax = target.x0, bxp = pump.x1, by = P.y_pump_cm, ll = Math.hypot(bxp - ax, by) || 1, nx = -by / ll, ny = (bxp - ax) / ll;
+  const off = loop ? od / 2 + 0.3 : 0;
+  const tubes = (loop ? [-1, 1] : [0]).map(k => ({ a: [ax + k * off * nx, k * off * ny], b: [bxp + k * off * nx, by + k * off * ny] }));  // a: target end (s = 0)
+  const ovc = { x0: Math.min(pump.x0, target.x0) - al, x1: target.x1 + al, y0: -rt - al, y1: Math.max(pump.y1, rt) + al };
+  const bore = { y0: -P.bore_cm / 2, y1: P.bore_cm / 2 };
+  const shield = { x0: target.x0 - al / 2, x1: target.x1 + al / 2, y0: -rt - al / 2, y1: rt + al / 2 };
+  const dt = rt, xLo = ovc.x0, xHi = ovc.x1, yLo = Math.min(ovc.y0, bore.y0), yHi = Math.max(ovc.y1, bore.y1);
+  const need = tubes.length * 28 + 6;          // the tube labels sit above the target; widen the top margin when that space is short
+  let t = SCENE_M.t, s = 0;
+  for (let k = 0; k < 3; k++) {
+    s = Math.min(40, (W - SCENE_M.l - SCENE_M.r) / (xHi - xLo), (H - t - SCENE_M.b) / (yHi - yLo));
+    t = SCENE_M.t + Math.max(0, need - (yHi - dt) * s);
+  }
+  const top = t + Math.max(0, (H - t - SCENE_M.b - (yHi - yLo) * s) / 2);   // centre a short drawing
   const X = x => SCENE_M.l + (x - xLo) * s, Y = y => top + (yHi - y) * s;
   const box = o => ({ x: X(o.x0), y: Y(o.y1), w: (o.x1 - o.x0) * s, h: (o.y1 - o.y0) * s });
-  return { s, X, Y, box, H: Math.ceil(SCENE_M.t + SCENE_M.b + (yHi - yLo) * s), minW: Math.ceil(SCENE_M.l + SCENE_M.r + (xHi - xLo) * 9), L, od, loop, tubes, pump, target, ovc, bore, shield, xLo, xHi, yLo };
+  return { s, X, Y, box, need, H: Math.ceil(t + SCENE_M.b + (yHi - yLo) * s), minW: Math.ceil(SCENE_M.l + SCENE_M.r + (xHi - xLo) * 9), L, od, loop, tubes, pump, target, ovc, bore, shield, xLo, xHi, yLo };
 }
 function drawCell(ctx, r, P, spinsArr, color, isMetal, col, still) {
   ctx.save();
@@ -1236,16 +1251,21 @@ function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still f
 
   // bore, outer vacuum chamber and heat shield
   ctx.save(); ctx.strokeStyle = F.fits ? col.muted : col.bad; ctx.lineWidth = 1; ctx.setLineDash([6, 5]);
-  [g.bore.y0, g.bore.y1].forEach(y => { ctx.beginPath(); ctx.moveTo(X(g.xLo) - 10, Y(y)); ctx.lineTo(X(g.xHi) + 10, Y(y)); ctx.stroke(); });
+  [g.bore.y0, g.bore.y1].forEach(y => { ctx.beginPath(); ctx.moveTo(X(g.xLo) - 10, Y(y)); ctx.lineTo(X(g.xHi) + 62, Y(y)); ctx.stroke(); });
   ctx.restore();
-  ctx.fillStyle = F.fits ? col.muted : col.bad; ctx.font = mono(11); ctx.textAlign = "right"; ctx.textBaseline = "bottom";
-  ctx.fillText(`${P.bore_cm} cm bore · stack ${F.stack_cm.toFixed(1)} cm` + (F.fits ? "" : ", too tall"), X(g.xHi) + 10, Y(g.bore.y1) - 3);
+  // the bore as a dimension at the right edge, centred on the beam axis
+  const dx = X(g.xHi) + 56, yb0 = Y(g.bore.y0), yb1 = Y(g.bore.y1), yax = Y(0);
+  ctx.strokeStyle = F.fits ? col.muted : col.bad; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(dx, yb0); ctx.lineTo(dx, yb1); ctx.stroke();
+  [[yb1, 1], [yb0, -1]].forEach(([y, d]) => { ctx.beginPath(); ctx.moveTo(dx, y); ctx.lineTo(dx - 3.5, y + d * 7); ctx.lineTo(dx + 3.5, y + d * 7); ctx.closePath(); ctx.fill(); });
+  ctx.save(); ctx.translate(dx + 9, yax); ctx.rotate(-Math.PI / 2); ctx.font = mono(11); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(`${P.bore_cm} cm bore`, 0, 0); ctx.restore();
   const ov = g.box(g.ovc), sh = g.box(g.shield);
   ctx.strokeStyle = col.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(ov.x, ov.y, ov.w, ov.h, 4); ctx.stroke();
   ctx.strokeStyle = col.warn; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(sh.x, sh.y, sh.w, sh.h, 3); ctx.stroke();
 
   // beam along the target axis, behind the cells
-  const yb = Y(R.fit.d_target_cm / 2), xbe = X(g.target.x1) + 46;
+  const yb = Y(0), xbe = X(g.target.x1) + 46;
   ctx.strokeStyle = col.bad; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(g.xLo) - 20, yb); ctx.lineTo(xbe - 8, yb); ctx.stroke();
   ctx.fillStyle = col.bad; ctx.beginPath(); ctx.moveTo(xbe, yb); ctx.lineTo(xbe - 11, yb - 5); ctx.lineTo(xbe - 11, yb + 5); ctx.closePath(); ctx.fill();
   ctx.font = disp(12); ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("e⁻ beam", 6, yb + 6);
@@ -1329,7 +1349,7 @@ function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still f
   // labels: the pumping cell above the chamber, the tubes in the space above the target, the target and the fit below
   ctx.fillStyle = col.muted; ctx.font = disp(13); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   ctx.fillText(`Pumping cell · ${P.Th} K · ${P.V_pump_cc} cm³ · ${P.L_pump_cm} cm`, Math.max(6, pr.x), Math.min(ov.y, Y(g.bore.y1)) - 8);
-  const bx = Math.min(pr.x + pr.w + 16, X(g.target.x1) - 120), bTop = Math.min(pr.y, ov.y) + 4, bBot = tr.y - 4;
+  const bx = X(g.target.x0) + 14, bBot = tr.y - 4, bTop = Math.min(ov.y + 4, bBot - g.need);     // above the target, clear of the tubes
   const rowH = Math.max(27, Math.min(34, (bBot - bTop) / Math.max(1, callouts.length)));    // two lines each: name and detail
   callouts.sort((a, b) => a.x - b.x).forEach((c, i) => {     // the upstream tube takes the top row, so the leaders don't cross
     const ty = bTop + 6 + rowH * i;
@@ -1340,16 +1360,23 @@ function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still f
     ctx.font = disp(12); ctx.fillText(c.name, bx, ty);
     if (c.detail) { ctx.font = mono(10.5); ctx.fillText(c.detail, bx, ty + 13); }
   });
-  const yd = Y(g.yLo) + 14, x0 = X(g.target.x0), x1 = X(g.target.x1);
-  ctx.strokeStyle = col.muted; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
-  ctx.beginPath(); ctx.moveTo(x0, yd); ctx.lineTo(x1, yd); ctx.stroke(); ctx.setLineDash([]);
-  ctx.beginPath(); ctx.moveTo(x0, yd - 4); ctx.lineTo(x0, yd + 4); ctx.moveTo(x1, yd - 4); ctx.lineTo(x1, yd + 4); ctx.stroke();
-  const dl = `${P.L_target_cm} cm`;
-  ctx.font = mono(11); const dw = ctx.measureText(dl).width + 10;
-  ctx.fillStyle = col.panel; ctx.fillRect((x0 + x1 - dw) / 2, yd - 7, dw, 14);
-  ctx.fillStyle = col.muted; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(dl, (x0 + x1) / 2, yd);
+  // a ruler along the beam, from the solenoid centre
+  const yd = Y(g.yLo) + 12, x0 = X(g.target.x0), step = g.xHi - g.xLo > 60 ? 10 : 5;
+  ctx.strokeStyle = col.muted; ctx.fillStyle = col.muted; ctx.lineWidth = 1; ctx.font = mono(10); ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.beginPath(); ctx.moveTo(X(g.xLo), yd); ctx.lineTo(X(g.xHi), yd); ctx.stroke();
+  for (let z = Math.ceil(g.xLo / step) * step; z <= g.xHi + 1e-9; z += step) {
+    ctx.beginPath(); ctx.moveTo(X(z), yd - (z === 0 ? 6 : 3)); ctx.lineTo(X(z), yd + 3); ctx.stroke();
+    ctx.fillText(z === 0 ? "0 centre" : String(z), X(z), yd + 5);
+  }
+  ctx.textAlign = "right"; ctx.fillText("z, cm", X(g.xHi) + 40, yd + 5);
   ctx.font = disp(13); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(`Target cell · ${fmtK(R.Tc)} K · ${P.V_target_cc} cm³`, x0, yd + 26);
+  ctx.fillText(`Target cell · ${fmtK(R.Tc)} K · ${P.V_target_cc} cm³ · ${P.L_target_cm} cm`, x0, yd + 36);
+  // the fit, under the pumping cell: its top against the bore radius
+  const room = x0 - X(g.xLo) - 12;
+  ctx.font = mono(11); ctx.fillStyle = F.fits ? col.muted : col.bad;
+  const fitText = [`pumping cell top ${F.top_cm.toFixed(2)} of ${F.radius_cm} cm above the beam` + (F.fits ? "" : ", too tall"),
+    `${F.top_cm.toFixed(2)} of ${F.radius_cm} cm above the beam` + (F.fits ? "" : ", too tall"), F.fits ? "fits" : "too tall"].find(t => ctx.measureText(t).width < room) || "";
+  ctx.fillText(fitText, X(g.xLo), yd + 36);
 }
 
 /* ---------------------------------------------------------------- charts */
@@ -1559,7 +1586,8 @@ function resultGroups() {
       ["Late-time M_p/M_t", pp.late_ratio.toFixed(3)]]],
     ["Fit in the bore", [
       ["Cell diameters, target / pumping", R.fit.d_target_cm.toFixed(2) + " / " + R.fit.d_pump_cm.toFixed(2) + " cm"],
-      ["Stack height", R.fit.stack_cm.toFixed(1) + " cm in a " + params.bore_cm + " cm bore" + (R.fit.fits ? "" : ", too tall")]]],
+      ["Pumping cell", `${params.z_pump_cm} cm upstream of the centre, axis ${params.y_pump_cm} cm above the beam`],
+      ["Top of the pumping cell, with allowance", R.fit.top_cm.toFixed(2) + " of " + R.fit.radius_cm + " cm" + (R.fit.fits ? "" : ", too tall")]]],
   ];
 }
 const CHART_LEGEND = col => [
@@ -1837,7 +1865,7 @@ function applyLoaded(doc, fname) {
   let used = 0;
   for (const [k, v] of Object.entries(src)) {
     if (!(k in DEFAULTS) || typeof v !== typeof DEFAULTS[k] || (typeof v === "number" && !isFinite(v)) ||
-        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings) ignored.push(k); continue; }
+        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings && k !== "rise_cm") ignored.push(k); continue; }   // rise_cm is migrated
     const d = DEFS.find(d => d.key === k);
     let val = v;
     if (d && !d.toggle) { val = Math.min(d.max, Math.max(d.min, v)); if (val !== v) clamped.push(plainText(d.label)); }
@@ -1949,7 +1977,7 @@ const FX = [
       ["Re = 4|ṁ| / (π d η(T_c))", "Reynolds number at the cold end"]],
     how: c => "ρ(s) and ν(s) follow the profiles of step 2, which depend on ṁ in turn, so the profiles are re-solved for each trial flow and the balance is found by false position.",
     vals: ({ P, loop }) => loop ? [
-      ["h/L", `${+R.fit.rise_cm.toFixed(2)} / ${P.length_cm} cm = ${(R.fit.rise_cm / P.length_cm).toFixed(3)}`],
+      ["h/L", `${+R.fit.rise_cm.toFixed(2)} / ${P.length_cm} cm = ${Math.min(1, R.fit.rise_cm / P.length_cm).toFixed(3)}`],
       ["ṁ", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"],
       ["  in kg/s", fmtSci(R.mdot_mg_h / 3.6e9)],
       ["Riser engine", !P.engine ? "off" : (P.engine_stage ? "first stage, " : "heater, ") + fmtK(R.T_engine) + " K"],
@@ -2101,20 +2129,24 @@ const FX = [
     },
     res: c => `M_p/M_t → ${R.paper.late_ratio.toFixed(3)}` },
 
-  { title: "Cell sizes and the fit in the bore",
-    where: ({ P }) => `The horizontal cylindrical cells, stacked one above the other in the ${P.bore_cm} cm bore with the tubes between them.`,
+  { title: "Cell positions and the fit in the bore",
+    where: ({ P }) => `The horizontal cylindrical cells in the ${P.bore_cm} cm solenoid bore: the target cell on the beam axis at the solenoid centre, the pumping cell upstream of it and above the beam, and the tubes between their facing end faces.`,
     eqs: c => [
       ["d = 2 √(V / (π L_cell))", "diameter of each cell from its volume and length"],
       ["A_cell = π d_t L_t + π d_t² / 2", "surface of the target cell facing the shield (step 4)"],
-      ["stack = d_t + h + d_p + allowance  ≤  bore", "target cell, the rise between the cells, pumping cell, and the cell walls, shield and OVC top and bottom"]],
-    how: c => "Only the vertical stack is checked; the cells' lengths and the tubes' horizontal runs fit along the bore.",
+      ["h = y_p,   gap = z_p − L_t/2,   L ≥ √(gap² + h²)", "the tubes rise the pumping cell's axis height y_p over the axial gap between the end faces; h/L drives the loop (step 3)"],
+      ["y_p + d_p/2 + allowance/2  ≤  bore/2", "the pumping cell's top, with its walls, shield and OVC"],
+      ["d_t/2 + allowance/2  ≤  bore/2", "the target cell, centred on the beam"]],
+    how: c => "The solenoid's field gradients are not included yet: they would add relaxation that grows with distance from the centre.",
     vals: ({ P }) => {
       const F = R.fit;
       return [["d_t, target cell", F.d_target_cm.toFixed(2) + " cm"], ["d_p, pumping cell", F.d_pump_cm.toFixed(2) + " cm"],
-        ["A_cell", F.A_target_cm2.toFixed(0) + " cm²"], ["h, rise", +F.rise_cm.toFixed(2) + " cm"], ["Allowance", P.allow_cm + " cm"],
-        ["Stack", F.stack_cm.toFixed(2) + " cm"], ["Bore", P.bore_cm + " cm" + (F.fits ? `, ${(P.bore_cm - F.stack_cm).toFixed(2)} cm to spare` : ", too small")]];
+        ["A_cell", F.A_target_cm2.toFixed(0) + " cm²"], ["h, rise", F.rise_cm + " cm"], ["Axial gap", F.gap_cm.toFixed(2) + " cm"],
+        ["Straight line, tube length", F.straight_cm.toFixed(2) + " cm, " + P.length_cm + " cm"],
+        ["Pumping cell top + allowance/2", F.top_cm.toFixed(2) + " cm"], ["Target cell + allowance/2", F.side_cm.toFixed(2) + " cm"],
+        ["Bore radius", F.radius_cm + " cm" + (F.fits ? `, ${(F.radius_cm - F.top_cm).toFixed(2)} cm to spare above` : ", too small")]];
     },
-    res: ({ P }) => `stack ${R.fit.stack_cm.toFixed(1)} cm in ${P.bore_cm} cm` + (R.fit.fits ? "" : ", too tall") },
+    res: c => `pumping cell top ${R.fit.top_cm.toFixed(2)} of ${R.fit.radius_cm} cm` + (R.fit.fits ? "" : ", too tall") },
 ];
 const fxEls = FX.map((f, i) => {
   const d = document.createElement("details");
