@@ -535,7 +535,7 @@ function fillRich(ctx, s, x, y) {     // honours ctx.textAlign; subscripts drop 
 /* ---------------------------------------------------------------- params */
 const DEFAULTS = {
   mode: "loop", p_mbar: 100, Tc: 5, Th: 300,
-  id_mm: 8, wall_mm: 1, length_cm: 10,
+  id_mm: 8, wall_mm: 1, length_cm: 8,
   engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25,
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
@@ -552,7 +552,7 @@ const DEFS = [
   { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 2.5, max: 30, dp: 1 },
   { fs: "tubes", key: "id_mm", label: "Inner diameter", unit: "mm", min: 2, max: 16, dp: 1 },
   { fs: "tubes", key: "wall_mm", label: "Wall thickness", unit: "mm", min: 0.5, max: 2.5, dp: 2 },
-  { fs: "tubes", key: "length_cm", label: "Length, cell to cell", unit: "cm", min: 2, max: 15, dp: 1 },
+  { fs: "tubes", key: "length_cm", label: "Length, cell to cell", unit: "cm", min: 1, max: 8, dp: 1 },
   { fs: "loop", key: "engine", label: "Engine clamp on the riser", toggle: true },
   { fs: "loop", key: "engine_stage", label: "Held by the first stage, not a heater", toggle: true },
   { fs: "loop", key: "engine_cm", label: "Engine height", unit: "cm", min: 0.5, max: 8, dp: 1 },
@@ -577,8 +577,8 @@ const DEFS = [
   { fs: "cooler", key: "cooler_pct", label: "Cooler performance, share of the reference chart", unit: "%", min: 30, max: 130, dp: 0 },
 ];
 const PRESETS = [
-  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, intercept: false } },
-  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
+  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 8, intercept: false } },
+  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 8, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
   { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true } },
   { name: "Loop, engine off", p: { mode: "loop", engine: false } },
   { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },

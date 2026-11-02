@@ -756,7 +756,7 @@ def run(params_json):
 
 DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
-    id_mm=8.0, wall_mm=1.0, length_cm=10.0,
+    id_mm=8.0, wall_mm=1.0, length_cm=8.0,
     engine=True, engine_stage=False, engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
