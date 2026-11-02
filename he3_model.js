@@ -133,10 +133,10 @@
     return out;
   }
 
-  function thermosiphon(A_, B_, tube, p) {
+  function thermosiphon(A_, B_, tube, p, slope) {    // slope = rise / length, each tube a uniform slope
     function resid(md) {
       const A = solve_leg(A_, tube, p, md), B = solve_leg(B_, tube, p, -md);
-      const drive = GRAV * (B.I_rho - A.I_rho);
+      const drive = GRAV * slope * (B.I_rho - A.I_rho);
       return [md * (A.R_fric + B.R_fric) - drive, drive, A.R_fric + B.R_fric];
     }
     const [r0, d0, R0] = resid(0);
@@ -234,6 +234,13 @@
             t.map(x => amp.a_lt * Math.exp(-rl * x) - amp.a_st * Math.exp(-rs * x))];
   }
 
+  // geometry in the bore: a tube can't rise more than its length; horizontal cylindrical cells [cm, cm^2]
+  const rise_cm = P => Math.min(P.rise_cm, P.length_cm);
+  function cell_geom(P) {
+    const d_t = 2 * Math.sqrt(P.V_target_cc / (Math.PI * P.L_target_cm)), d_p = 2 * Math.sqrt(P.V_pump_cc / (Math.PI * P.L_pump_cm));
+    const A_t = Math.PI * d_t * P.L_target_cm + 0.5 * Math.PI * d_t * d_t, stack = d_t + rise_cm(P) + d_p + P.allow_cm;
+    return { d_target_cm: d_t, d_pump_cm: d_p, A_target_cm2: A_t, rise_cm: rise_cm(P), stack_cm: stack, bore_cm: P.bore_cm, fits: stack <= P.bore_cm };
+  }
   function disk_view(r, L) {
     const R = r / L, X = 2 + 1 / (R * R);
     return 2 / (X + Math.sqrt(X * X - 4));
@@ -241,7 +248,8 @@
   function stage_loads(P, heat, tube, n_legs) {
     const Th = P.Th, Tc = P.Tc, T1 = P.T_shield, q_int = heat.intercept, q_eng = heat.engine, on1 = engine_on_stage(P);
     const rad1 = SIGMA * P.eps_shield * P.A_shield_m2 * (Th ** 4 - T1 ** 4);
-    const rad2 = SIGMA * P.eps_cold * P.A_cold_cm2 * 1e-4 * (T1 ** 4 - Tc ** 4);
+    const A_cold = cell_geom(P).A_target_cm2 + P.A_cold_cm2;      // the target cell plus the other cold surfaces
+    const rad2 = SIGMA * P.eps_cold * A_cold * 1e-4 * (T1 ** 4 - Tc ** 4);
     const bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2, P.length_cm * 0.01) * (Th ** 4 - Tc ** 4);
     const first = { T: T1, intercept: Math.max(0, q_int), engine: on1 ? q_eng : 0, radiation: rad1, other: P.other1_W };
     first.total = first.intercept + first.engine + rad1 + first.other;
@@ -285,7 +293,7 @@
   function thermal(P) {
     const p = P.p_mbar * 100, tube = Tube(P.id_mm * 1e-3, P.wall_mm * 1e-3);
     const [legs, errs] = build_legs(P);
-    const mdot = P.mode === "single" ? 0 : thermosiphon(legs[0], legs[1], tube, p);
+    const mdot = P.mode === "single" ? 0 : thermosiphon(legs[0], legs[1], tube, p, rise_cm(P) / P.length_cm);
     const sol = legs.map((leg, i) => solve_leg(leg, tube, p, i === 0 ? mdot : -mdot, true));
     const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
@@ -387,11 +395,16 @@
       warnings.push("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.");
     if (P.mode === "loop" && mdot < 0)
       warnings.push("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.");
+    const fit = cell_geom(P);
+    if (P.rise_cm > P.length_cm)
+      warnings.push(`A tube can't rise more than its length, so the tubes are taken as vertical: the rise is ${g3(P.length_cm)} cm.`);
+    if (!fit.fits)
+      warnings.push(`The stack is ${g3(fit.stack_cm)} cm tall (target cell ${g3(fit.d_target_cm)} cm, rise ${g3(fit.rise_cm)} cm, pumping cell ${g3(fit.d_pump_cm)} cm, walls, shield and OVC ${g3(P.allow_cm)} cm), more than the ${g3(P.bore_cm)} cm bore.`);
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
-      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler,
+      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler, fit,
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
       production_atoms_s: g_b * Mss * Np,
@@ -403,7 +416,7 @@
   function run(json) { try { return JSON.stringify(compute(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }
   const PT420 = { Q1: PT420_Q1, Q2: PT420_Q2, T1: PT420_T1, T2: PT420_T2, map: pt_map, load1: pt_load1, load2: pt_load2 };
   // gas, glass and radiation helpers, for the page's formula section
-  const props = { eta, k_gas, n_num, rho, nD, k_glass, disk_view, KB, M_ATOM, CP, SIGMA, ETA_300, ETA_EXP, RHO_D_OVER_ETA };
+  const props = { eta, k_gas, n_num, rho, nD, k_glass, disk_view, cell_geom, KB, M_ATOM, CP, SIGMA, ETA_300, ETA_EXP, RHO_D_OVER_ETA };
   root.He3ModelJS = { run, compute, PT420, props };
   if (typeof module !== "undefined") module.exports = { run, compute };
 })(typeof window !== "undefined" ? window : globalThis);
