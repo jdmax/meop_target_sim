@@ -108,11 +108,12 @@ legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter
 
 /* stage */
 .main { display: grid; gap: 18px; min-width: 0; }
-.stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-items: start; }   /* the side view of the bore runs full width */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .stage { grid-template-columns: minmax(0, 1fr); } }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
 .scene-wrap { position: relative; }
-.scene-scroll { overflow-x: auto; }
-#scene { display: block; width: 100%; height: 320px; }   /* the page sets the size the drawing needs; narrow screens scroll it sideways */
+#scene { display: block; width: 100%; height: 560px; max-width: 100%; }
+@media (max-width: 520px) { #scene { height: 500px; } }
 .tlegend { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .tlegend .bar { flex: 1; height: 8px; border-radius: 4px; min-width: 80px; }
 .tlegend .ticks { position: relative; height: 1.4em; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
@@ -120,10 +121,7 @@ legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter
 .tlegend .ticks span:first-child { transform: none; }
 .tlegend .ticks span:last-child { transform: translateX(-100%); }
 
-.readouts { display: grid; gap: 14px; align-items: start; }
-.readouts > .kpis { grid-column: 1 / -1; }
-@media (min-width: 760px) { #pol-side, #heat-side { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 1240px) { #heat-side { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.readouts { display: grid; gap: 14px; }
 .kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--bg); min-width: 0; }
 .kpi .k { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
@@ -314,7 +312,6 @@ footer.site a { color: var(--accent); }
       <div class="chips" id="presets" aria-label="Presets"></div>
       <fieldset id="fs-cells"><legend>Gas and cells</legend></fieldset>
       <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
-      <fieldset id="fs-bore"><legend>Position in the solenoid bore</legend></fieldset>
       <fieldset id="fs-loop"><legend>Riser engine</legend></fieldset>
       <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
       <fieldset id="fs-pump"><legend>Pumping (sealed-cell values) and relaxation</legend></fieldset>
@@ -328,7 +325,7 @@ footer.site a { color: var(--accent); }
       </div>
       <div class="stage">
         <section class="card scene-wrap" aria-label="Cell schematic">
-          <div class="scene-scroll"><canvas id="scene" role="img" aria-label="Side view of the bore: the pumping cell, transfer tubes and target cell, to scale"></canvas></div>
+          <canvas id="scene" role="img" aria-label="Schematic of the pumping cell, transfer tubes and target cell"></canvas>
           <div class="tlegend">
             <span>Tube T</span>
             <div style="flex:1;min-width:0">
@@ -456,7 +453,7 @@ footer.site a { color: var(--accent); }
           <h2 id="fxHead">The model, step by step</h2>
           <button class="btn ghost" type="button" id="fxAll">Open all</button>
         </div>
-        <p class="hint fx-intro">Every step of the model in the order it runs, with where each equation applies and the numbers it gives for the current settings. The cooler steps (1–5) set the target temperature T<sub>c</sub>; the rate equations (6–11) then use it; step 12 places the cells in the solenoid bore and checks they fit. Equation numbers refer to <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</p>
+        <p class="hint fx-intro">Every step of the model in the order it runs, with where each equation applies and the numbers it gives for the current settings. The cooler steps (1–5) set the target temperature T<sub>c</sub>; the rate equations (6–11) then use it. Equation numbers refer to <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</p>
         <div class="fx" id="fx"></div>
         <ul class="notes">
           <li id="srcStatus">Waiting for Python…</li>
@@ -541,37 +538,29 @@ const DEFAULTS = {
   id_mm: 8, wall_mm: 1, length_cm: 10,
   engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25,
   intercept: true, T_int: 45, s_int_cm: 4,
-  V_pump_cc: 49, V_target_cc: 100, L_pump_cm: 10, L_target_cm: 20,
-  z_pump_cm: 10, y_pump_cm: 10, bore_cm: 10, allow_cm: 2,
+  V_pump_cc: 49, V_target_cc: 100,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
   on_h: 24,
   T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
-  A_cold_cm2: 130, eps_cold: 0.05, other2_mW: 0,
+  A_cold_cm2: 300, eps_cold: 0.05, other2_mW: 0,
   cooler_map: true, cooler_pct: 100,
 };
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
-  { fs: "cells", key: "L_pump_cm", label: "Pumping cell length", unit: "cm", min: 3, max: 40, dp: 1 },
-  { fs: "cells", key: "Th", label: "Pumping cell temperature", unit: "K", min: 250, max: 350, dp: 0 },
   { fs: "cells", key: "V_target_cc", label: "Target cell volume", unit: "cm³", min: 5, max: 500, log: true, dp: 0 },
-  { fs: "cells", key: "L_target_cm", label: "Target cell length", unit: "cm", min: 3, max: 40, dp: 1 },
   { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 2.5, max: 30, dp: 1 },
   { fs: "tubes", key: "id_mm", label: "Inner diameter", unit: "mm", min: 2, max: 16, dp: 1 },
   { fs: "tubes", key: "wall_mm", label: "Wall thickness", unit: "mm", min: 0.5, max: 2.5, dp: 2 },
-  { fs: "tubes", key: "length_cm", label: "Tube length, cell to cell", unit: "cm", min: 2, max: 15, dp: 1 },
-  { fs: "bore", key: "z_pump_cm", label: "Pumping cell, downstream end upstream of the solenoid centre", unit: "cm", min: 0, max: 40, dp: 1 },
-  { fs: "bore", key: "y_pump_cm", label: "Pumping cell axis, height above the beam", unit: "cm", min: 0, max: 15, dp: 2 },
-  { fs: "bore", key: "bore_cm", label: "Bore diameter", unit: "cm", min: 5, max: 30, dp: 1 },
-  { fs: "bore", key: "allow_cm", label: "Cell walls, shield and OVC, top and bottom together", unit: "cm", min: 0, max: 6, dp: 2 },
+  { fs: "tubes", key: "length_cm", label: "Length, cell to cell", unit: "cm", min: 2, max: 15, dp: 1 },
   { fs: "loop", key: "engine", label: "Engine clamp on the riser", toggle: true },
   { fs: "loop", key: "engine_stage", label: "Held by the first stage, not a heater", toggle: true },
-  { fs: "loop", key: "engine_cm", label: "Engine length along the riser", unit: "cm", min: 0.5, max: 8, dp: 1 },
+  { fs: "loop", key: "engine_cm", label: "Engine height", unit: "cm", min: 0.5, max: 8, dp: 1 },
   { fs: "loop", key: "T_engine", label: "Riser engine temperature", unit: "K", min: 4, max: 300, log: true, dp: 1 },
   { fs: "loop", key: "gap_cm", label: "Isolating gap below engine", unit: "cm", min: 0.1, max: 3, dp: 2 },
   { fs: "int", key: "intercept", label: "Intercept on (first stage)", toggle: true },
   { fs: "int", key: "T_int", label: "Intercept temperature", unit: "K", min: 15, max: 120, dp: 0 },
-  { fs: "int", key: "s_int_cm", label: "Distance along the tube from the target cell", unit: "cm", min: 0.5, max: 15, dp: 1 },
+  { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 15, dp: 1 },
   { fs: "pump", key: "M_ss", label: "Sealed-cell steady polarization M_ss", unit: "%", min: 5, max: 95, dp: 1 },
   { fs: "pump", key: "T_b_s", label: "Sealed-cell build-up time T_b", unit: "s", min: 5, max: 5000, log: true, dp: 0 },
   { fs: "pump", key: "T1t_h", label: "Target-cell T_1 (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
@@ -581,39 +570,23 @@ const DEFS = [
   { fs: "shield", key: "A_shield_m2", label: "Shield area facing 300 K", unit: "m²", min: 0.02, max: 5, log: true, dp: 3 },
   { fs: "shield", key: "eps_shield", label: "Effective emissivity, 300 K → shield (MLI)", unit: "", min: 0.0005, max: 0.2, log: true, dp: 4 },
   { fs: "shield", key: "other1_W", label: "Other first-stage loads (supports, wiring)", unit: "W", min: 0, max: 30, dp: 2 },
-  { fs: "coldrad", key: "A_cold_cm2", label: "Other cold surface facing the shield (clamps, heat exchanger)", unit: "cm²", min: 1, max: 5000, log: true, dp: 0 },
+  { fs: "coldrad", key: "A_cold_cm2", label: "Cold surface facing the shield (target cell, clamps)", unit: "cm²", min: 10, max: 5000, log: true, dp: 0 },
   { fs: "coldrad", key: "eps_cold", label: "Effective emissivity, shield → cold surface", unit: "", min: 0.005, max: 1, log: true, dp: 3 },
   { fs: "coldrad", key: "other2_mW", label: "Other second-stage loads (supports, wiring, NMR)", unit: "mW", min: 0, max: 2000, dp: 0 },
   { fs: "cooler", key: "cooler_map", label: "Stage temperatures from the PT420 map", toggle: true },
   { fs: "cooler", key: "cooler_pct", label: "Cooler performance, share of the reference chart", unit: "%", min: 30, max: 130, dp: 0 },
 ];
 const PRESETS = [
-  { name: "CLAS12 concept", p: { mode: "loop", V_pump_cc: 200, L_pump_cm: 21, Th: 293, M_ss: 60, V_target_cc: 100, L_target_cm: 20,
-    id_mm: 8, wall_mm: 1, length_cm: 6, z_pump_cm: 15, y_pump_cm: 2.75, bore_cm: 10, allow_cm: 1,
-    engine: true, engine_stage: true, engine_cm: 1, gap_cm: 0.3, intercept: true, T_int: 45, s_int_cm: 3.5 } },
-  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, L_target_cm: 20, z_pump_cm: 10, y_pump_cm: 10, intercept: false } },
-  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, L_target_cm: 20, z_pump_cm: 10, y_pump_cm: 10, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
+  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, intercept: false } },
+  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
   { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true } },
   { name: "Loop, engine off", p: { mode: "loop", engine: false } },
   { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },
   { name: "Defaults", p: DEFAULTS },
 ];
 
-// Settings saved before the cells had positions in the bore had the pumping cell straight above the target's upstream end:
-// vertical tubes rising their length (or the rise_cm saved with them). The oldest ones counted the target cell itself in the
-// cold surface, which now adds the cell's own surface.
-function migrateFlat(src, next) {
-  if (!("length_cm" in src) || "y_pump_cm" in src) return false;
-  next.z_pump_cm = next.L_target_cm / 2;
-  next.y_pump_cm = typeof src.rise_cm === "number" ? Math.min(src.rise_cm, next.length_cm) : next.length_cm;
-  if ("A_cold_cm2" in src && !("rise_cm" in src)) next.A_cold_cm2 = Math.max(1, next.A_cold_cm2 - He3ModelJS.props.cell_geom(next).A_target_cm2);
-  return true;
-}
 let params = Object.assign({}, DEFAULTS);
-try {
-  const saved = JSON.parse(localStorage.getItem("he3x-params") || "null");
-  if (saved) { params = Object.assign({}, DEFAULTS, saved); migrateFlat(saved, params); }
-} catch (e) {}
+try { const saved = JSON.parse(localStorage.getItem("he3x-params") || "null"); if (saved) params = Object.assign({}, DEFAULTS, saved); } catch (e) {}
 const save = () => { try { localStorage.setItem("he3x-params", JSON.stringify(params)); } catch (e) {} };
 
 const $ = id => document.getElementById(id);
@@ -654,8 +627,6 @@ DEFS.forEach(d => {
 $("fs-pump").insertAdjacentHTML("beforeend", '<p class="hint" id="sealedHint"></p>');
 $("fs-cells").insertAdjacentHTML("beforeend", '<p class="hint" id="tcHint"></p>');
 $("fs-loop").insertAdjacentHTML("beforeend", '<p class="hint" id="engineHint"></p>');
-$("fs-bore").insertAdjacentHTML("beforeend", '<p class="hint" id="boreHint"></p>');
-$("fs-tubes").insertAdjacentHTML("beforeend", "<p class=\"hint\">The tubes join the cells' facing end faces and climb the pumping cell's height above the beam as a straight slope: only that rise drives the loop, while the full length sets conduction and diffusion. A tube can't be shorter than the straight line between the end faces.</p>");
 $("fs-shield").insertAdjacentHTML("beforeend", '<p class="hint" id="shieldHint"></p>');
 $("fs-cooler").insertAdjacentHTML("beforeend", '<p class="hint">With the map on, the first stage floats wherever the two loads put it and a trim heater holds the second stage at the target set point. With it off, both temperatures are fixed and the map gives the capacity there.</p>');
 const tcLabel = () => params.cooler_map ? "Target set point" : "Target temperature";
@@ -716,11 +687,6 @@ function computePy() {
 }
 let pending = null;
 function changed(final) {
-  const reach = He3ModelJS.props.cell_geom(params).straight_cm;   // the tubes must reach between the cells' end faces
-  if (params.length_cm < reach - 1e-9) {
-    params.length_cm = Math.min(inputs.length_cm.d.max, Math.ceil(reach * 10 - 1e-9) / 10);
-    inputs.length_cm.num.value = params.length_cm; inputs.length_cm.rng.value = toSlider(inputs.length_cm.d, params.length_cm);
-  }
   save();
   // Instant preview from the JS port while dragging, as long as it reproduces the Python model.
   if (!py || jsAgrees) previewJS(py ? "preview" : null);
@@ -804,13 +770,6 @@ function show(res, source) {
   showHeat();
   showFormulas();
   engineHint();
-  const F = R.fit, bh = $("boreHint");
-  bh.classList.toggle("bad", !F.fits);
-  bh.textContent = `The target cell sits on the beam at the solenoid centre. The pumping cell, ${F.d_pump_cm.toFixed(2)} cm across, ` +
-    `starts ${params.z_pump_cm} cm upstream with its axis ${params.y_pump_cm} cm above the beam; its top and half the allowance reach ${F.top_cm.toFixed(2)} cm, ` +
-    (F.top_cm <= F.radius_cm ? `inside the ${F.radius_cm} cm radius by ${(F.radius_cm - F.top_cm).toFixed(2)} cm.` : `past the ${F.radius_cm} cm radius by ${(F.top_cm - F.radius_cm).toFixed(2)} cm.`) +
-    ` The tubes span ${F.gap_cm.toFixed(1)} cm along the axis and rise ${F.rise_cm} cm: ${F.straight_cm.toFixed(2)} cm in a straight line.` +
-    (F.side_cm > F.radius_cm ? " The target cell itself is too big for the bore." : "") + (F.overlap ? " The pumping cell overlaps the target cell." : "");
 
   $("sealedHint").innerHTML = richHTML(`Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`);
 
@@ -848,7 +807,7 @@ function show(res, source) {
     let d = Infinity;
     try {
       const js = computeJS();
-      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim, o.fit.top_cm];
+      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim];
       const a = pick(R), b = pick(js);
       d = Math.max(...a.map((v, i) => Math.abs(v - b[i]) / Math.max(Math.abs(v), 1e-30)));
     } catch (e) {}
@@ -881,8 +840,7 @@ function stageRows() {
     `Glass and gas conduction down ${tubes}` + (conv ? ", plus the enthalpy the loop carries down" : "")]];
   if (S.second.engine > 0) second.push(["engine", `Engine clamp at ${fmtK(R.T_engine)} K`, S.second.engine,
     "The engine sits below the riser's natural temperature, so its clamp removes heat"]);
-  second.push(["rad", "Radiation from the shield", S.second.radiation,
-    `${(R.fit.A_target_cm2 + P.A_cold_cm2).toFixed(0)} cm² (target cell ${R.fit.A_target_cm2.toFixed(0)}, other ${P.A_cold_cm2}), ε = ${P.eps_cold}, ${fmtK(R.T_shield)} K → ${fmtK(R.Tc)} K`]);
+  second.push(["rad", "Radiation from the shield", S.second.radiation, `${P.A_cold_cm2} cm², ε = ${P.eps_cold}, ${fmtK(R.T_shield)} K → ${fmtK(R.Tc)} K`]);
   second.push(["rad", "Radiation down the tube bores", S.second.bore, `Direct line of sight from the ${P.Th} K end of ${tubes}`]);
   second.push(["other", "Other second-stage loads", S.second.other, "Supports, wiring, NMR leads"]);
   const first = [];
@@ -1173,43 +1131,22 @@ function updateSpins(arr, n, P, rate) {
     }
   }
 }
-/* Side view of the solenoid bore, to scale: the target cell on the beam axis at the solenoid centre, the pumping cell upstream
-   and above it, and the tubes as the straight slopes the model assumes between their end faces. Positions are in cm:
-   x along the beam from the solenoid centre, y up from the beam axis. */
-const SCENE_M = { l: 64, r: 74, t: 30, b: 60 };      // px margins: supply valve, bore dimension, pumping-cell label, ruler and labels
-function sceneGeom(W, H) {
-  const P = params, F = R.fit, rt = F.d_target_cm / 2, rp = F.d_pump_cm / 2, L = P.length_cm, al = P.allow_cm / 2;
-  const od = (P.id_mm + 2 * P.wall_mm) / 10, loop = P.mode === "loop";
-  const target = { x0: -P.L_target_cm / 2, x1: P.L_target_cm / 2, y0: -rt, y1: rt };
-  const pump = { x0: -P.z_pump_cm - P.L_pump_cm, x1: -P.z_pump_cm, y0: P.y_pump_cm - rp, y1: P.y_pump_cm + rp };
-  // the tubes join the facing end faces, side by side across the line between the face centres
-  const ax = target.x0, bxp = pump.x1, by = P.y_pump_cm, ll = Math.hypot(bxp - ax, by) || 1, nx = -by / ll, ny = (bxp - ax) / ll;
-  const off = loop ? od / 2 + 0.3 : 0;
-  const tubes = (loop ? [-1, 1] : [0]).map(k => ({ a: [ax + k * off * nx, k * off * ny], b: [bxp + k * off * nx, by + k * off * ny] }));  // a: target end (s = 0)
-  const ovc = { x0: Math.min(pump.x0, target.x0) - al, x1: target.x1 + al, y0: -rt - al, y1: Math.max(pump.y1, rt) + al };
-  const bore = { y0: -P.bore_cm / 2, y1: P.bore_cm / 2 };
-  const shield = { x0: target.x0 - al / 2, x1: target.x1 + al / 2, y0: -rt - al / 2, y1: rt + al / 2 };
-  const dt = rt, xLo = ovc.x0, xHi = ovc.x1, yLo = Math.min(ovc.y0, bore.y0), yHi = Math.max(ovc.y1, bore.y1);
-  const need = tubes.length * 28 + 6;          // the tube labels sit above the target; widen the top margin when that space is short
-  let t = SCENE_M.t, s = 0;
-  for (let k = 0; k < 3; k++) {
-    s = Math.min(40, (W - SCENE_M.l - SCENE_M.r) / (xHi - xLo), (H - t - SCENE_M.b) / (yHi - yLo));
-    t = SCENE_M.t + Math.max(0, need - (yHi - dt) * s);
-  }
-  const top = t + Math.max(0, (H - t - SCENE_M.b - (yHi - yLo) * s) / 2);   // centre a short drawing
-  const X = x => SCENE_M.l + (x - xLo) * s, Y = y => top + (yHi - y) * s;
-  const box = o => ({ x: X(o.x0), y: Y(o.y1), w: (o.x1 - o.x0) * s, h: (o.y1 - o.y0) * s });
-  return { s, X, Y, box, need, H: Math.ceil(t + SCENE_M.b + (yHi - yLo) * s), minW: Math.ceil(SCENE_M.l + SCENE_M.r + (xHi - xLo) * 9), L, od, loop, tubes, pump, target, ovc, bore, shield, xLo, xHi, yLo };
+function layout(W, H) {
+  const cellW = Math.min(W * 0.6, 360), cx = Math.min(W * 0.44, W / 2 - 10);
+  const pump = { x: cx - cellW / 2, y: 40, w: cellW, h: 80 };
+  const target = { x: cx - cellW / 2, y: H - 44 - 100, w: cellW, h: 100 };
+  const spread = Math.min(70, cellW * 0.22);
+  const legX = params.mode === "loop" ? [cx - spread, cx + spread] : [cx];
+  return { pump, target, cx, legX, y0: pump.y + pump.h, y1: target.y };
 }
-function drawCell(ctx, r, P, spinsArr, color, isMetal, col, still) {
+function drawCell(ctx, r, label, P, spinsArr, color, isMetal, col, still) {
   ctx.save();
-  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, isMetal ? Math.min(6, r.h / 3) : r.h / 2.4);
+  ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, isMetal ? 6 : r.h / 2.4);
   ctx.fillStyle = isMetal ? col.metal : col.glass; ctx.fill();
   ctx.lineWidth = isMetal ? 1.5 : 1.25; ctx.strokeStyle = isMetal ? col.muted : col.line; ctx.stroke();
   // spins in the left part
-  const padX = isMetal ? Math.min(14, r.h / 2) : r.h / 2.6, padY = Math.min(12, r.h * 0.18);
-  const area = { x: r.x + padX, y: r.y + padY, w: r.w * 0.62 - padX, h: r.h - 2 * padY };
-  const cols = Math.max(4, Math.floor(area.w / 14)), rows = Math.max(1, Math.floor(area.h / 17));
+  const padX = isMetal ? 14 : r.h / 2.6, area = { x: r.x + padX, y: r.y + 12, w: r.w * 0.62 - padX, h: r.h - 24 };
+  const cols = Math.max(4, Math.floor(area.w / 14)), rows = Math.max(2, Math.floor(area.h / 17));
   const n = cols * rows;
   updateSpins(spinsArr, n, P, still || reduceMotion ? null : 0.06);
   const dx = area.w / cols, dy = area.h / rows;
@@ -1223,160 +1160,111 @@ function drawCell(ctx, r, P, spinsArr, color, isMetal, col, still) {
   ctx.globalAlpha = 1;
   // readout
   ctx.fillStyle = color; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  ctx.font = `500 ${Math.min(26, r.w * 0.075, r.h * 0.75)}px ${css("--font-mono")}`;
-  ctx.fillText((P * 100).toFixed(1) + "%", r.x + r.w - (isMetal ? Math.min(14, r.h / 2) : r.h / 3), r.y + r.h / 2);
+  ctx.font = `500 ${Math.min(26, r.w * 0.075)}px ${css("--font-mono")}`;
+  ctx.fillText((P * 100).toFixed(1) + "%", r.x + r.w - (isMetal ? 14 : r.h / 3), r.y + r.h / 2);
   ctx.restore();
+  ctx.fillStyle = col.muted; ctx.font = `600 13px ${css("--font-display")}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.fillText(label, r.x + 4, isMetal ? r.y + r.h + 18 : r.y - 10);
 }
 function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still frame for a saved figure
   let W, H, ctx;
   if (out) ({ ctx, W, H } = out);
-  else {
-    if (!R) return;
-    const room = scene.parentElement.clientWidth, cw = Math.max(room, sceneGeom(room, 560).minW);   // at least 9 px/cm, else scroll
-    const want = Math.max(240, Math.min(560, sceneGeom(cw, 560).H));    // the canvas is as tall as the drawing needs
-    const r0 = scene.getBoundingClientRect();
-    if (Math.abs(r0.width - cw) > 1) {
-      scene.style.width = cw > room ? cw + "px" : "100%";
-      const g0 = sceneGeom(cw, want);                                   // scrolled, start with the tubes in view
-      if (cw > room) scene.parentElement.scrollLeft = g0.X(g0.tubes[0].a[0]) - room / 2;
-    }
-    if (Math.abs(r0.height - want) > 1) scene.style.height = want + "px";
-    [W, H] = fitCanvas(scene); ctx = sctx; ctx.clearRect(0, 0, W, H);
-  }
+  else { [W, H] = fitCanvas(scene); ctx = sctx; ctx.clearRect(0, 0, W, H); }
   if (!R) return;
-  const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), glass: css("--glass"),
-    metal: css("--metal"), panel: css("--panel"), accent: css("--accent"), warn: css("--warn"), bad: css("--bad") };
-  const g = sceneGeom(W, H), { X, Y, s } = g, P = params, F = R.fit, [Pp, Pt] = currentP();
-  const mono = px => `${px}px ${css("--font-mono")}`, disp = px => `600 ${px}px ${css("--font-display")}`;
+  const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), glass: css("--glass"), metal: css("--metal"), panel: css("--panel"), accent: css("--accent") };
+  const L = layout(W, H), Hcm = params.length_cm, span = L.y1 - L.y0;
+  const yOf = s => L.y1 - (s / Hcm) * span;
+  const [Pp, Pt] = currentP();
 
-  // bore, outer vacuum chamber and heat shield
-  ctx.save(); ctx.strokeStyle = F.fits ? col.muted : col.bad; ctx.lineWidth = 1; ctx.setLineDash([6, 5]);
-  [g.bore.y0, g.bore.y1].forEach(y => { ctx.beginPath(); ctx.moveTo(X(g.xLo) - 10, Y(y)); ctx.lineTo(X(g.xHi) + 62, Y(y)); ctx.stroke(); });
-  ctx.restore();
-  // the bore as a dimension at the right edge, centred on the beam axis
-  const dx = X(g.xHi) + 56, yb0 = Y(g.bore.y0), yb1 = Y(g.bore.y1), yax = Y(0);
-  ctx.strokeStyle = F.fits ? col.muted : col.bad; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(dx, yb0); ctx.lineTo(dx, yb1); ctx.stroke();
-  [[yb1, 1], [yb0, -1]].forEach(([y, d]) => { ctx.beginPath(); ctx.moveTo(dx, y); ctx.lineTo(dx - 3.5, y + d * 7); ctx.lineTo(dx + 3.5, y + d * 7); ctx.closePath(); ctx.fill(); });
-  ctx.save(); ctx.translate(dx + 9, yax); ctx.rotate(-Math.PI / 2); ctx.font = mono(11); ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText(`${P.bore_cm} cm bore`, 0, 0); ctx.restore();
-  const ov = g.box(g.ovc), sh = g.box(g.shield);
-  ctx.strokeStyle = col.ink; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(ov.x, ov.y, ov.w, ov.h, 4); ctx.stroke();
-  ctx.strokeStyle = col.warn; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(sh.x, sh.y, sh.w, sh.h, 3); ctx.stroke();
+  // ruler
+  ctx.strokeStyle = col.line; ctx.fillStyle = col.muted; ctx.lineWidth = 1; ctx.font = `11px ${css("--font-mono")}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  const rx = 4; ctx.beginPath(); ctx.moveTo(rx + 26, L.y0); ctx.lineTo(rx + 26, L.y1); ctx.stroke();
+  const stepCm = Hcm <= 6 ? 1 : Hcm <= 15 ? 2 : Hcm <= 30 ? 5 : 10;
+  for (let s = 0; s <= Hcm + 1e-9; s += stepCm) { const y = yOf(s); ctx.beginPath(); ctx.moveTo(rx + 22, y); ctx.lineTo(rx + 30, y); ctx.stroke(); ctx.fillText(String(s), rx, y); }
+  ctx.fillText("cm", rx, L.y0 - 14);
 
-  // beam along the target axis, behind the cells
-  const yb = Y(0), xbe = X(g.target.x1) + 46;
-  ctx.strokeStyle = col.bad; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(g.xLo) - 20, yb); ctx.lineTo(xbe - 8, yb); ctx.stroke();
-  ctx.fillStyle = col.bad; ctx.beginPath(); ctx.moveTo(xbe, yb); ctx.lineTo(xbe - 11, yb - 5); ctx.lineTo(xbe - 11, yb + 5); ctx.closePath(); ctx.fill();
-  ctx.font = disp(12); ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("e⁻ beam", 6, yb + 6);
+  // supply line
+  const py0 = L.pump.y + L.pump.h / 2, sx0 = L.pump.x + L.pump.w, sx1 = Math.min(W - 26, sx0 + Math.max(40, (W - sx0) * 0.5));
+  ctx.strokeStyle = col.muted; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx0, py0); ctx.lineTo(sx1 - 9, py0); ctx.moveTo(sx1 + 9, py0); ctx.lineTo(Math.min(W - 6, sx1 + 30), py0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sx1 - 9, py0 - 7); ctx.lineTo(sx1 + 9, py0 + 7); ctx.lineTo(sx1 + 9, py0 - 7); ctx.lineTo(sx1 - 9, py0 + 7); ctx.closePath();
+  ctx.fillStyle = col.ink; ctx.fill(); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = col.muted; ctx.font = `600 12px ${css("--font-display")}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillText("supply", sx1, py0 - 14); ctx.font = `11px ${css("--font-mono")}`;
+  ctx.fillText("closed", sx1, py0 + 22);
 
-  // tubes: drawn in a frame along each tube, x along s from the target end
-  const legs = R.legs.slice(0, g.tubes.length), tw = Math.max(5, g.od * s);
-  const along = t => { const ax = X(t.a[0]), ay = Y(t.a[1]), bx = X(t.b[0]), by = Y(t.b[1]); return { ax, ay, len: Math.hypot(bx - ax, by - ay), ang: Math.atan2(by - ay, bx - ax) }; };
-  const callouts = [];
+  // legs
+  const legs = R.legs.slice(0, L.legX.length);
   legs.forEach((leg, li) => {
-    const f = along(g.tubes[li]), px = sv => sv / g.L * f.len, prof = leg.profile;
-    ctx.save(); ctx.translate(f.ax, f.ay); ctx.rotate(f.ang);
-    ctx.fillStyle = col.line; ctx.fillRect(0, -tw / 2 - 2, f.len, tw + 4);
-    for (let x = 0; x < f.len; x += 2) { ctx.fillStyle = tColor(sampleT(prof, x / f.len * g.L)); ctx.fillRect(x, -tw / 2, 2.2, tw); }
+    const x = L.legX[li], tw = Math.max(7, Math.min(14, params.id_mm * 1.1)), prof = leg.profile;
+    // tube glass outline
+    ctx.fillStyle = col.line; ctx.fillRect(x - tw / 2 - 2, L.y0, tw + 4, span);
+    for (let y = L.y0; y < L.y1; y += 2) {
+      const s = (L.y1 - y) / span * Hcm;
+      ctx.fillStyle = tColor(sampleT(prof, s)); ctx.fillRect(x - tw / 2, y, tw, 2.2);
+    }
+    // nodes
     let s0 = 0;
-    const notes = [];
     leg.nodes.forEach((nd, ni) => {
-      const [Tn, cl, kind] = nd, x0 = px(s0), x1 = px(s0 + cl);
+      const [Tn, cl, kind] = nd;
+      const yA = yOf(s0), yB = yOf(s0 + cl), side = li === 0 && L.legX.length > 1 ? -1 : 1;
       if (kind === "cold" && cl > 0) {
-        ctx.fillStyle = col.cold; ctx.globalAlpha = 0.28; ctx.fillRect(x0, -tw / 2 - 5, x1 - x0, tw + 10); ctx.globalAlpha = 1;
-        ctx.strokeStyle = col.cold; ctx.lineWidth = 1.2; ctx.strokeRect(x0, -tw / 2 - 5, x1 - x0, tw + 10);
-        notes.push(`${+Tn.toPrecision(3)} K clamp`);
+        ctx.fillStyle = col.cold; ctx.globalAlpha = 0.28; ctx.fillRect(x - tw / 2 - 7, yB, tw + 14, yA - yB); ctx.globalAlpha = 1;
+        ctx.strokeStyle = col.cold; ctx.lineWidth = 1.2; ctx.strokeRect(x - tw / 2 - 7, yB, tw + 14, yA - yB);
+        label(ctx, x + side * (tw / 2 + 12), (yA + yB) / 2, `${+Tn.toPrecision(4)} K clamp`, side, col);
       } else if (kind === "engine" && cl > 0) {
         ctx.strokeStyle = col.warm; ctx.lineWidth = 1.5; ctx.beginPath();
-        const n = Math.max(3, Math.round((x1 - x0) / 5));
-        for (let k = 0; k <= n; k++) { const xx = x0 + (x1 - x0) * k / n, yy = (k % 2 ? 1 : -1) * (tw / 2 + 4); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
+        const n = Math.max(3, Math.round((yA - yB) / 6));
+        for (let k = 0; k <= n; k++) { const yy = yA - (yA - yB) * k / n, xx = x + (k % 2 ? 1 : -1) * (tw / 2 + 6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
         ctx.stroke();
-        notes.push(`engine ${+Tn.toPrecision(3)} K` + (P.engine_stage ? " (1st stage)" : ""));
+        label(ctx, x + side * (tw / 2 + 12), (yA + yB) / 2, `engine ${+Tn.toPrecision(3)} K`, side, col);
       } else if (kind === "intercept") {
-        ctx.fillStyle = col.ink; ctx.fillRect(x0 - 2.5, -tw / 2 - 6, 5, tw + 12);
-        notes.push(`${+Tn.toPrecision(3)} K intercept`);
+        ctx.fillStyle = col.ink; ctx.fillRect(x - tw / 2 - 8, yA - 2.5, tw + 16, 5);
+        label(ctx, x + side * (tw / 2 + 12), yA, `${+Tn.toPrecision(4)} K intercept`, side, col);
       }
       s0 += cl + (ni < leg.free_cm.length ? leg.free_cm[ni] : 0);
     });
-    ctx.restore();
-    const back = R.mdot_mg_h < 0, name = !g.loop ? "transfer tube" : li === 0 ? (back ? "riser ↓" : "riser ↑") : (back ? "downcomer ↑" : "downcomer ↓");
-    callouts.push({ x: f.ax + Math.cos(f.ang) * f.len * 0.5, y: f.ay + Math.sin(f.ang) * f.len * 0.5, name, detail: notes.join(", ") });
+    if (L.legX.length > 1) {
+      ctx.save(); ctx.fillStyle = col.muted; ctx.font = `600 12px ${css("--font-display")}`; ctx.textAlign = "center";
+      ctx.textAlign = li === 0 ? "right" : "left"; ctx.textBaseline = "middle";
+      const back = R.mdot_mg_h < 0;      // a loop running backwards flows down the riser
+      ctx.fillText(li === 0 ? (back ? "riser ↓" : "riser ↑") : (back ? "downcomer ↑" : "downcomer ↓"), x + (li === 0 ? -1 : 1) * (Math.max(7, Math.min(14, params.id_mm * 1.1)) / 2 + 10), L.y0 + 16);
+      ctx.restore();
+    }
   });
 
-  // flow or diffusion tracers along the tubes
-  const at = (li, sv) => { const t = g.tubes[li], u = sv / g.L; return [X(t.a[0] + u * (t.b[0] - t.a[0])), Y(t.a[1] + u * (t.b[1] - t.a[1]))]; };
-  const loop = g.loop && Math.abs(R.mdot_mg_h) > 0.01;
-  if (out) { if (loop) drawFlowArrows(ctx, g, legs, at, col); }
+  // flow / diffusion tracers
+  const loop = params.mode === "loop" && Math.abs(R.mdot_mg_h) > 0.01;
+  if (out) { if (loop) drawFlowArrows(ctx, L, legs, yOf, Hcm, col); }
   else {
-    const nPer = 14;
-    if (dots.length !== legs.length * nPer) { dots = []; legs.forEach((_, li) => { for (let k = 0; k < nPer; k++) dots.push({ li, s: Math.random() * g.L }); }); }
-    const vis = loop ? Math.min(1.2, 0.25 + Math.log10(1 + Math.abs(R.mdot_mg_h)) / 3) : 0;
-    dots.forEach(d => {
-      const leg = legs[d.li]; if (!leg) return;
-      if (d.s > g.L) d.s = Math.random() * g.L;
-      const T = sampleT(leg.profile, d.s);
-      if (!reduceMotion && dtSec > 0) {
-        if (loop) {
-          const dir = (d.li === 0 ? 1 : -1) * Math.sign(R.mdot_mg_h);
-          d.s += dir * vis * g.L * 0.35 * dtSec * (0.08 + 0.92 * T / 300);
-          if (d.s > g.L) d.s -= g.L; if (d.s < 0) d.s += g.L;
-        } else {
-          d.s += (Math.random() - 0.5) * g.L * 0.06 * Math.pow(T / 300, 0.84) * Math.sqrt(dtSec * 60);
-          d.s = Math.max(0, Math.min(g.L, d.s));
-        }
+  const nPer = 14;
+  if (dots.length !== legs.length * nPer) { dots = []; legs.forEach((_, li) => { for (let k = 0; k < nPer; k++) dots.push({ li, s: Math.random() * Hcm }); }); }
+  const vis = loop ? Math.min(1.2, 0.25 + Math.log10(1 + Math.abs(R.mdot_mg_h)) / 3) : 0;
+  dots.forEach(d => {
+    const leg = legs[d.li]; if (!leg) return;
+    const T = sampleT(leg.profile, d.s);
+    if (!reduceMotion && dtSec > 0) {
+      if (loop) {
+        const dir = (d.li === 0 ? 1 : -1) * Math.sign(R.mdot_mg_h);
+        d.s += dir * vis * Hcm * 0.35 * dtSec * (0.08 + 0.92 * T / 300);
+        if (d.s > Hcm) d.s -= Hcm; if (d.s < 0) d.s += Hcm;
+      } else {
+        d.s += (Math.random() - 0.5) * Hcm * 0.06 * Math.pow(T / 300, 0.84) * Math.sqrt(dtSec * 60);
+        d.s = Math.max(0, Math.min(Hcm, d.s));
       }
-      const [x, y] = at(d.li, d.s);
-      ctx.fillStyle = col.ink; ctx.globalAlpha = 0.75;
-      ctx.beginPath(); ctx.arc(x, y, Math.min(2.1, tw / 3), 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-    });
-  }
-
-  // cells
-  const spinSet = out ? out.spins : spins, pr = g.box(g.pump), tr = g.box(g.target);
-  drawCell(ctx, pr, Pp, spinSet.pump, col.warm, false, col, !!out);
-  drawCell(ctx, tr, Pt, spinSet.target, col.cold, true, col, !!out);
-
-  // supply line and valve off the upstream end of the pumping cell
-  const vy = pr.y + pr.h / 2, vx = pr.x - 30;
-  ctx.strokeStyle = col.muted; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(pr.x, vy); ctx.lineTo(vx + 8, vy); ctx.moveTo(vx - 8, vy); ctx.lineTo(vx - 22, vy); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(vx - 8, vy - 6); ctx.lineTo(vx + 8, vy + 6); ctx.lineTo(vx + 8, vy - 6); ctx.lineTo(vx - 8, vy + 6); ctx.closePath();
-  ctx.fillStyle = col.ink; ctx.fill(); ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = col.muted; ctx.textAlign = "center"; ctx.font = disp(11.5); ctx.textBaseline = "bottom"; ctx.fillText("supply", vx, vy - 9);
-  ctx.font = mono(10.5); ctx.textBaseline = "top"; ctx.fillText("closed", vx, vy + 9);
-
-  // labels: the pumping cell above the chamber, the tubes in the space above the target, the target and the fit below
-  ctx.fillStyle = col.muted; ctx.font = disp(13); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(`Pumping cell · ${P.Th} K · ${P.V_pump_cc} cm³ · ${P.L_pump_cm} cm`, Math.max(6, pr.x), Math.min(ov.y, Y(g.bore.y1)) - 8);
-  const bx = X(g.target.x0) + 14, bBot = tr.y - 4, bTop = Math.min(ov.y + 4, bBot - g.need);     // above the target, clear of the tubes
-  const rowH = Math.max(27, Math.min(34, (bBot - bTop) / Math.max(1, callouts.length)));    // two lines each: name and detail
-  callouts.sort((a, b) => a.x - b.x).forEach((c, i) => {     // the upstream tube takes the top row, so the leaders don't cross
-    const ty = bTop + 6 + rowH * i;
-    ctx.strokeStyle = col.muted; ctx.lineWidth = 1; ctx.globalAlpha = 0.7;
-    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(bx - 5, ty); ctx.stroke(); ctx.globalAlpha = 1;
-    ctx.fillStyle = col.ink; ctx.beginPath(); ctx.arc(c.x, c.y, 2.2, 0, Math.PI * 2); ctx.fill();
-    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = col.muted;
-    ctx.font = disp(12); ctx.fillText(c.name, bx, ty);
-    if (c.detail) { ctx.font = mono(10.5); ctx.fillText(c.detail, bx, ty + 13); }
+    }
+    ctx.fillStyle = col.ink; ctx.globalAlpha = 0.75;
+    ctx.beginPath(); ctx.arc(L.legX[d.li], yOf(d.s), 2.1, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
   });
-  // a ruler along the beam, from the solenoid centre
-  const yd = Y(g.yLo) + 12, x0 = X(g.target.x0), step = g.xHi - g.xLo > 60 ? 10 : 5;
-  ctx.strokeStyle = col.muted; ctx.fillStyle = col.muted; ctx.lineWidth = 1; ctx.font = mono(10); ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.beginPath(); ctx.moveTo(X(g.xLo), yd); ctx.lineTo(X(g.xHi), yd); ctx.stroke();
-  for (let z = Math.ceil(g.xLo / step) * step; z <= g.xHi + 1e-9; z += step) {
-    ctx.beginPath(); ctx.moveTo(X(z), yd - (z === 0 ? 6 : 3)); ctx.lineTo(X(z), yd + 3); ctx.stroke();
-    ctx.fillText(z === 0 ? "0 centre" : String(z), X(z), yd + 5);
   }
-  ctx.textAlign = "right"; ctx.fillText("z, cm", X(g.xHi) + 40, yd + 5);
-  ctx.font = disp(13); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-  ctx.fillText(`Target cell · ${fmtK(R.Tc)} K · ${P.V_target_cc} cm³ · ${P.L_target_cm} cm`, x0, yd + 36);
-  // the fit, under the pumping cell: its top against the bore radius
-  const room = x0 - X(g.xLo) - 12;
-  ctx.font = mono(11); ctx.fillStyle = F.fits ? col.muted : col.bad;
-  const fitText = [`pumping cell top ${F.top_cm.toFixed(2)} of ${F.radius_cm} cm above the beam` + (F.fits ? "" : ", too tall"),
-    `${F.top_cm.toFixed(2)} of ${F.radius_cm} cm above the beam` + (F.fits ? "" : ", too tall"), F.fits ? "fits" : "too tall"].find(t => ctx.measureText(t).width < room) || "";
-  ctx.fillText(fitText, X(g.xLo), yd + 36);
+
+  const spinSet = out ? out.spins : spins;
+  drawCell(ctx, L.pump, `Pumping cell · ${params.Th} K · ${params.V_pump_cc} cm³`, Pp, spinSet.pump, col.warm, false, col, !!out);
+  drawCell(ctx, L.target, `Target cell · ${fmtK(R ? R.Tc : params.Tc)} K · ${params.V_target_cc} cm³`, Pt, spinSet.target, col.cold, true, col, !!out);
+}
+function label(ctx, x, y, text, side, col) {
+  ctx.save(); ctx.fillStyle = col.muted; ctx.font = `11.5px ${css("--font-mono")}`;
+  ctx.textAlign = side < 0 ? "right" : "left"; ctx.textBaseline = "middle"; ctx.fillText(text, x, y); ctx.restore();
 }
 
 /* ---------------------------------------------------------------- charts */
@@ -1502,7 +1390,7 @@ const MODEL_VER = (() => {
 const PAGE_URL = /^https?:$/.test(location.protocol) ? location.origin + location.pathname.replace(/index\.html$/, "") : null;
 const INC = ["scene", "build", "zero", "map", "settings", "results"];
 const EXPORT_KEY = "he3x-export";
-const FIG = { W: 1400, pad: 36, gap: 24, sceneMax: 480, chartH: 340, tableMax: 600 };
+const FIG = { W: 1400, pad: 36, gap: 24, sceneW: 480, sceneH: 600, chartH: 380, tableMax: 600 };
 const TB = { head: 28, row: 23, gap: 12 };
 let lastSource = null, loadCheck = null, previewTimer = null;
 
@@ -1542,8 +1430,9 @@ function withLightTheme(fn) {
 /* --- figure content */
 function settingsGroups() {
   const g = [["Configuration", [
-    ["Gas exchange", params.mode === "loop" ? "Convection loop, two tubes" : "Single tube"]]]];
-  ["cells", "tubes", "bore", "loop", "int", "pump", "shield", "coldrad", "cooler"].forEach(fs => {
+    ["Gas exchange", params.mode === "loop" ? "Convection loop, two tubes" : "Single tube"],
+    ["Pumping cell temperature", params.Th + " K"]]]];
+  ["cells", "tubes", "loop", "int", "pump", "shield", "coldrad", "cooler"].forEach(fs => {
     if (fs === "loop" && params.mode !== "loop") return;
     const rows = DEFS.filter(d => d.fs === fs && (d.toggle || fs !== "int" || params.intercept) &&
         (fs !== "loop" || d.key === "engine" || (params.engine && !(d.key === "T_engine" && params.engine_stage))) &&
@@ -1584,10 +1473,6 @@ function resultGroups() {
       ["Decay constants τ_s, τ_l", fmtTime(pp.tau_s) + ", " + fmtTime(pp.tau_l)],
       ["Zeroed pump cell peaks at", fmtPct(pp.P_peak) + " after " + fmtTime(pp.t_peak)],
       ["Late-time M_p/M_t", pp.late_ratio.toFixed(3)]]],
-    ["Fit in the bore", [
-      ["Cell diameters, target / pumping", R.fit.d_target_cm.toFixed(2) + " / " + R.fit.d_pump_cm.toFixed(2) + " cm"],
-      ["Pumping cell", `${params.z_pump_cm} cm upstream of the centre, axis ${params.y_pump_cm} cm above the beam`],
-      ["Top of the pumping cell, with allowance", R.fit.top_cm.toFixed(2) + " of " + R.fit.radius_cm + " cm" + (R.fit.fits ? "" : ", too tall")]]],
   ];
 }
 const CHART_LEGEND = col => [
@@ -1662,15 +1547,13 @@ function drawChartBlock(ctx, b, col) {
   ctx.translate(b.x - 4, top);
   drawChart(b.k, { ctx, W: b.w + 4, H: b.y + b.h - top, fs: 1.2 });
 }
-function drawFlowArrows(ctx, g, legs, at, col) {   // still frames show the loop direction with chevrons along each tube
+function drawFlowArrows(ctx, L, legs, yOf, Hcm, col) {   // still frames show the loop direction with chevrons
   legs.forEach((leg, li) => {
-    const d = (li === 0) === (R.mdot_mg_h > 0) ? 1 : -1;    // +1: flow toward the pumping cell
+    const x = L.legX[li], d = (li === 0) === (R.mdot_mg_h > 0) ? -1 : 1;
     ctx.save(); ctx.strokeStyle = col.ink; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
-    [0.45, 0.62, 0.79].forEach(f => {
-      const [x, y] = at(li, f * g.L), [x2, y2] = at(li, (f + 0.01) * g.L);
-      const l = Math.hypot(x2 - x, y2 - y) || 1, ux = d * (x2 - x) / l, uy = d * (y2 - y) / l;
-      ctx.beginPath(); ctx.moveTo(x - ux * 3 - uy * 4.5, y - uy * 3 + ux * 4.5); ctx.lineTo(x + ux * 3, y + uy * 3);
-      ctx.lineTo(x - ux * 3 + uy * 4.5, y - uy * 3 - ux * 4.5); ctx.stroke();
+    [0.55, 0.7, 0.85].forEach(f => {
+      const y = yOf(f * Hcm);
+      ctx.beginPath(); ctx.moveTo(x - 4.5, y - d * 3); ctx.lineTo(x, y + d * 3); ctx.lineTo(x + 4.5, y - d * 3); ctx.stroke();
     });
     ctx.restore();
   });
@@ -1714,23 +1597,29 @@ function figureLayout(opt, ctx) {
   if (opt.settings) tables.push(settingsGroups());
   if (opt.results) tables.push(resultGroups());
   const ks = [opt.build ? 0 : -1, opt.zero ? 1 : -1, opt.map ? 2 : -1].filter(k => k >= 0);
-  if (opt.scene) {                             // the side view of the bore runs across the top, as tall as it needs
+  if (opt.scene && !tables.length) {           // schematic beside stacked charts: about 16:9, for a slide
     y += gap;
-    const h = Math.max(240, Math.min(FIG.sceneMax, sceneGeom(inner - 20, FIG.sceneMax).H)) + 66;
-    blocks.push({ kind: "scene", x: pad, y, w: inner, h });
-    y += h;
-  }
-  if (ks.length) {
-    y += gap;
-    const cw = (inner - gap * (ks.length - 1)) / ks.length;
-    ks.forEach((k, i) => blocks.push({ kind: "chart", k, x: pad + i * (cw + gap), y, w: cw, h: FIG.chartH }));
-    y += FIG.chartH;
-  }
-  if (tables.length) {
-    y += gap;
-    const rowH = Math.max(...tables.map(tableHeight)), tw = (inner - gap * (tables.length - 1)) / tables.length;
-    tables.forEach((groups, i) => blocks.push({ kind: "table", groups, x: pad + i * (tw + gap), y, w: tw, h: rowH }));
-    y += rowH;
+    blocks.push({ kind: "scene", x: pad, y, w: FIG.sceneW, h: FIG.sceneH });
+    const cx = pad + FIG.sceneW + gap, cw = inner - FIG.sceneW - gap;
+    const ch = ks.length ? (FIG.sceneH - gap * (ks.length - 1)) / ks.length : 0;
+    ks.forEach((k, i) => blocks.push({ kind: "chart", k, x: cx, y: y + i * (ch + gap), w: cw, h: ch }));
+    y += FIG.sceneH;
+  } else {
+    if (opt.scene || tables.length) {
+      y += gap;
+      const rowH = Math.max(opt.scene ? FIG.sceneH : 0, ...tables.map(tableHeight));
+      let x = pad;
+      if (opt.scene) { blocks.push({ kind: "scene", x, y, w: FIG.sceneW, h: rowH }); x += FIG.sceneW + gap; }
+      const tw = tables.length ? (pad + inner - x - gap * (tables.length - 1)) / tables.length : 0;
+      tables.forEach(groups => { blocks.push({ kind: "table", groups, x, y, w: tw, h: rowH }); x += tw + gap; });
+      y += rowH;
+    }
+    if (ks.length) {
+      y += gap;
+      const cw = (inner - gap * (ks.length - 1)) / ks.length;
+      ks.forEach((k, i) => blocks.push({ kind: "chart", k, x: pad + i * (cw + gap), y, w: cw, h: FIG.chartH }));
+      y += FIG.chartH;
+    }
   }
   y += gap - 4;
   f = `12.5px ${css("--font-body")}`; ctx.font = f;
@@ -1794,7 +1683,7 @@ function resultSummary() {
     loop_flow_mg_per_h: r6(R.mdot_mg_h), reynolds_cold_end: r6(R.Re), N_pump: r6(R.Np), N_target: r6(R.Nt),
     a_exchange: r6(R.loss_exchange), b_capacity: r6(R.loss_capacity),
     heat_mW: r6o(R.heat_mW),
-    T_target_K: r6(R.Tc), T_first_stage_K: r6(R.T_shield), T_engine_K: r6(R.T_engine), cooler: r6o(R.cooler), fit_cm: r6o(R.fit),
+    T_target_K: r6(R.Tc), T_first_stage_K: r6(R.T_shield), cooler: r6o(R.cooler),
     stages_W: { first: r6o(R.stages.first), second: r6o(R.stages.second),
       intercept_heater: r6(R.stages.intercept_heater), engine_heater: r6(R.stages.engine_heater), warm_supply: r6(R.stages.warm_supply) },
     probe: {
@@ -1865,7 +1754,7 @@ function applyLoaded(doc, fname) {
   let used = 0;
   for (const [k, v] of Object.entries(src)) {
     if (!(k in DEFAULTS) || typeof v !== typeof DEFAULTS[k] || (typeof v === "number" && !isFinite(v)) ||
-        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings && k !== "rise_cm") ignored.push(k); continue; }   // rise_cm is migrated
+        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings) ignored.push(k); continue; }
     const d = DEFS.find(d => d.key === k);
     let val = v;
     if (d && !d.toggle) { val = Math.min(d.max, Math.max(d.min, v)); if (val !== v) clamped.push(plainText(d.label)); }
@@ -1874,7 +1763,6 @@ function applyLoaded(doc, fname) {
   if (!used) throw new Error("no settings this page recognizes");
   const legacy = "cap2_W" in src && !("cooler_map" in src);   // saved before the PT420 map: keep its fixed temperatures
   if (legacy) next.cooler_map = false;
-  const flat = migrateFlat(src, next);
   if (typeof doc.title === "string") $("figTitle").value = doc.title;
   if (typeof doc.notes === "string") $("figNotes").value = doc.notes;
   saveExportPrefs();
@@ -1882,7 +1770,6 @@ function applyLoaded(doc, fname) {
   if (clamped.length) msg += ` Limited to the slider range: ${clamped.join(", ")}.`;
   if (ignored.length) msg += ` Ignored settings this page doesn't use: ${ignored.join(", ")}.`;
   if (legacy) msg += " The file predates the PT420 map, so the map is off and its temperatures are kept.";
-  if (flat) msg += " The file predates the cell dimensions, so its tubes are vertical and its cold surface is split into the target cell's own surface and the rest.";
   setStatus(msg);
   loadCheck = doc.results && typeof doc.results.P_target_steady === "number" && !clamped.length ? doc.results : null;
   params = next;
@@ -1972,12 +1859,11 @@ const FX = [
         : "The loop: the riser with its engine clamp and the downcomer, both spanning the height between the cells.")
       : "Loop mode only. With a single tube there is no circulation (ṁ = 0), and the exchange is by diffusion alone.",
     eqs: c => [
-      ["g (h/L) [(∫ρ ds)_down − (∫ρ ds)_up] = ṁ (R_up + R_down)", "buoyancy of the colder, denser downcomer balances laminar friction; each tube of length L rises h between the horizontal cells as a straight slope"],
+      ["g (∫ρ ds)_down − g (∫ρ ds)_up = ṁ (R_up + R_down)", "buoyancy of the colder, denser downcomer balances laminar friction"],
       ["R = (128 / π d⁴) ∫ ν ds,   ν = η/ρ", "Poiseuille resistance of each leg, along its temperature profile"],
       ["Re = 4|ṁ| / (π d η(T_c))", "Reynolds number at the cold end"]],
     how: c => "ρ(s) and ν(s) follow the profiles of step 2, which depend on ṁ in turn, so the profiles are re-solved for each trial flow and the balance is found by false position.",
     vals: ({ P, loop }) => loop ? [
-      ["h/L", `${+R.fit.rise_cm.toFixed(2)} / ${P.length_cm} cm = ${Math.min(1, R.fit.rise_cm / P.length_cm).toFixed(3)}`],
       ["ṁ", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"],
       ["  in kg/s", fmtSci(R.mdot_mg_h / 3.6e9)],
       ["Riser engine", !P.engine ? "off" : (P.engine_stage ? "first stage, " : "heater, ") + fmtK(R.T_engine) + " K"],
@@ -1994,8 +1880,7 @@ const FX = [
       c.eng ? ["Q_2 = Q_cold + Q_eng + σ ε_c A_c (T_sh⁴ − T_c⁴) + Q_bore + Q_{2,other}", "conduction, an engine clamp that removes heat, shield radiation onto the cold surfaces"]
         : ["Q_2 = Q_cold + σ ε_c A_c (T_sh⁴ − T_c⁴) + Q_bore + Q_{2,other}", "conduction, shield radiation onto the cold surfaces"]]).concat([
       ["Q_bore = n_tubes σ A_gas F_view (T_h⁴ − T_c⁴)", "direct line of sight from the warm end down each bore"],
-      ["F_view = (X − √(X² − 4)) / 2,   X = 2 + (L/r)²", "view factor between coaxial disks of radius r a distance L apart"],
-      ["A_c = A_cell + A_other", "the target cell's own surface (step 12) plus the other cold surfaces you enter"]]),
+      ["F_view = (X − √(X² − 4)) / 2,   X = 2 + (L/r)²", "view factor between coaxial disks of radius r a distance L apart"]]),
     how: c => (c.eng1 ? "The engine held by the first stage puts its heat there with either sign. Any other clamp" : "A clamp") +
       " that has to be heated (Q < 0) is listed as a heater, not a cooler load. T_sh and T_c are the stage temperatures from step 5.",
     vals: ({ P, X, r }) => {
@@ -2005,7 +1890,7 @@ const FX = [
       rows.push(["  300 K → shield", fmtP(S.first.radiation)], ["  Q_{1,other}", fmtP(S.first.other)], ["Q_1", fmtP(S.first.total)],
         ["  Q_cold", fmtP(S.second.conduction)]);
       if (S.second.engine > 0) rows.push(["  Q_eng", fmtP(S.second.engine)]);
-      rows.push([`  shield → cold surfaces, A_c = ${(R.fit.A_target_cm2 + P.A_cold_cm2).toFixed(0)} cm²`, fmtP(S.second.radiation)],
+      rows.push(["  shield → cold surfaces", fmtP(S.second.radiation)],
         [`  Q_bore, F_view = ${fmtSci(X.disk_view(r, P.length_cm * 0.01))}`, fmtP(S.second.bore)],
         ["  Q_{2,other}", fmtP(S.second.other)], ["Q_2", fmtP(S.second.total)]);
       return rows;
@@ -2128,25 +2013,6 @@ const FX = [
         ["Peak M_p", fxPct(pp.P_peak) + " at " + fmtTime(pp.t_peak)], ["a_l/a_lt", pp.late_ratio.toFixed(3)]];
     },
     res: c => `M_p/M_t → ${R.paper.late_ratio.toFixed(3)}` },
-
-  { title: "Cell positions and the fit in the bore",
-    where: ({ P }) => `The horizontal cylindrical cells in the ${P.bore_cm} cm solenoid bore: the target cell on the beam axis at the solenoid centre, the pumping cell upstream of it and above the beam, and the tubes between their facing end faces.`,
-    eqs: c => [
-      ["d = 2 √(V / (π L_cell))", "diameter of each cell from its volume and length"],
-      ["A_cell = π d_t L_t + π d_t² / 2", "surface of the target cell facing the shield (step 4)"],
-      ["h = y_p,   gap = z_p − L_t/2,   L ≥ √(gap² + h²)", "the tubes rise the pumping cell's axis height y_p over the axial gap between the end faces; h/L drives the loop (step 3)"],
-      ["y_p + d_p/2 + allowance/2  ≤  bore/2", "the pumping cell's top, with its walls, shield and OVC"],
-      ["d_t/2 + allowance/2  ≤  bore/2", "the target cell, centred on the beam"]],
-    how: c => "The solenoid's field gradients are not included yet: they would add relaxation that grows with distance from the centre.",
-    vals: ({ P }) => {
-      const F = R.fit;
-      return [["d_t, target cell", F.d_target_cm.toFixed(2) + " cm"], ["d_p, pumping cell", F.d_pump_cm.toFixed(2) + " cm"],
-        ["A_cell", F.A_target_cm2.toFixed(0) + " cm²"], ["h, rise", F.rise_cm + " cm"], ["Axial gap", F.gap_cm.toFixed(2) + " cm"],
-        ["Straight line, tube length", F.straight_cm.toFixed(2) + " cm, " + P.length_cm + " cm"],
-        ["Pumping cell top + allowance/2", F.top_cm.toFixed(2) + " cm"], ["Target cell + allowance/2", F.side_cm.toFixed(2) + " cm"],
-        ["Bore radius", F.radius_cm + " cm" + (F.fits ? `, ${(F.radius_cm - F.top_cm).toFixed(2)} cm to spare above` : ", too small")]];
-    },
-    res: c => `pumping cell top ${R.fit.top_cm.toFixed(2)} of ${R.fit.radius_cm} cm` + (R.fit.fits ? "" : ", too tall") },
 ];
 const fxEls = FX.map((f, i) => {
   const d = document.createElement("details");

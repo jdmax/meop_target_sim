@@ -15,10 +15,9 @@ Transport (per leg, 1-D along the tube):
     instead of a heater, in which case it sits at the first-stage temperature.
   * diffusion of polarization at uniform pressure: G = A / int ds/(n D);
     n*D = 1.32 eta(T)/m is independent of pressure.
-  * thermosiphon (loop mode): buoyancy g*(h/L)*[(int rho ds)_down - (int rho ds)_up]
+  * thermosiphon (loop mode): buoyancy g*(int rho ds)_down - (int rho ds)_up
     balanced by Poiseuille friction 128 nu mdot / (pi d^4), with the tube
-    temperature profiles re-solved for each trial flow. Each tube of length L
-    rises h between the horizontal cells as a straight, uniform slope.
+    temperature profiles re-solved for each trial flow.
 
 Cooler stages (stage_loads): the intercept, 300 K radiation onto the shield and other
 loads go to the first stage; the cold clamps and target cell, an engine clamp that
@@ -299,15 +298,14 @@ def solve_leg(leg, tube, p, mdot, want_profile=False):
     return out
 
 
-def thermosiphon(legA, legB, tube, p, slope):
-    """legA = riser, legB = downcomer, same length and rise, pumping cell on top.
-    slope = rise / length: each tube is taken as a straight, uniform slope.
+def thermosiphon(legA, legB, tube, p):
+    """legA = riser, legB = downcomer, same total height, pumping cell on top.
     Returns mdot (> 0: up A, down B)."""
 
     def resid(md):
         A = solve_leg(legA, tube, p, md)
         B = solve_leg(legB, tube, p, -md)
-        drive = GRAV * slope * (B["I_rho"] - A["I_rho"])
+        drive = GRAV * (B["I_rho"] - A["I_rho"])
         return md * (A["R_fric"] + B["R_fric"]) - drive, drive, A["R_fric"] + B["R_fric"]
 
     r0, d0, R0 = resid(0.0)
@@ -461,32 +459,6 @@ def relax_curves(sys2, amp, t):
     return Mp, Mt
 
 
-# ------------------------------------------------------------------ geometry in the bore
-def cell_geom(P):
-    """Horizontal cylindrical cells in the solenoid bore [cm, cm^2]. The target cell is centred on the bore axis (the
-    beam) and on the solenoid centre, z = 0. The pumping cell sits upstream, its downstream end z_pump_cm before the
-    centre and its axis y_pump_cm above the beam. The tubes join the cells' facing end faces, so they rise
-    y_pump_cm over an axial gap z_pump_cm - L_target/2 and can't be shorter than the straight line between them.
-    The pumping cell's top and the target cell, each with half the allowance, must fit within the bore's radius."""
-    d_t = 2.0 * math.sqrt(P["V_target_cc"] / (math.pi * P["L_target_cm"]))
-    d_p = 2.0 * math.sqrt(P["V_pump_cc"] / (math.pi * P["L_pump_cm"]))
-    A_t = math.pi * d_t * P["L_target_cm"] + 0.5 * math.pi * d_t * d_t
-    rise = P["y_pump_cm"]
-    gap = P["z_pump_cm"] - 0.5 * P["L_target_cm"]
-    straight = math.hypot(gap, rise)
-    top = P["y_pump_cm"] + 0.5 * d_p + 0.5 * P["allow_cm"]
-    side = 0.5 * (d_t + P["allow_cm"])
-    radius = 0.5 * P["bore_cm"]
-    return dict(d_target_cm=d_t, d_pump_cm=d_p, A_target_cm2=A_t, rise_cm=rise, gap_cm=gap, straight_cm=straight,
-                top_cm=top, side_cm=side, radius_cm=radius, fits=top <= radius and side <= radius,
-                overlap=gap < 0 and P["y_pump_cm"] - 0.5 * d_p < 0.5 * d_t, below_beam=P["y_pump_cm"] < 0.5 * d_p)
-
-
-def slope(P):
-    """rise / length of the tubes, each taken as a straight, uniform slope."""
-    return min(1.0, cell_geom(P)["rise_cm"] / P["length_cm"])
-
-
 # ------------------------------------------------------------------ cooler stages
 def disk_view(r, L):
     """View factor between two equal coaxial disks of radius r a distance L apart:
@@ -508,8 +480,7 @@ def stage_loads(P, heat, tube, n_legs):
     q_int, q_eng = heat["intercept"], heat["engine"]
     on1 = engine_on_stage(P)
     rad1 = SIGMA * P["eps_shield"] * P["A_shield_m2"] * (Th ** 4 - T1 ** 4)
-    A_cold = cell_geom(P)["A_target_cm2"] + P["A_cold_cm2"]      # the target cell plus the other cold surfaces
-    rad2 = SIGMA * P["eps_cold"] * A_cold * 1e-4 * (T1 ** 4 - Tc ** 4)
+    rad2 = SIGMA * P["eps_cold"] * P["A_cold_cm2"] * 1e-4 * (T1 ** 4 - Tc ** 4)
     bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2.0, P["length_cm"] * 0.01) * (Th ** 4 - Tc ** 4)
     first = dict(T=T1, intercept=max(0.0, q_int), engine=q_eng if on1 else 0.0, radiation=rad1, other=P["other1_W"])
     first["total"] = first["intercept"] + first["engine"] + rad1 + first["other"]
@@ -589,7 +560,7 @@ def thermal(P):
     if P["mode"] == "single":
         mdot = 0.0
     else:
-        mdot = thermosiphon(legs[0], legs[1], tube, p, slope(P))
+        mdot = thermosiphon(legs[0], legs[1], tube, p)
     sol = []
     for i, leg in enumerate(legs):
         md = mdot if i == 0 else -mdot
@@ -745,19 +716,6 @@ def compute(P):
         warnings.append("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.")
     if P["mode"] == "loop" and mdot < 0:
         warnings.append("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.")
-    fit = cell_geom(P)
-    if P["length_cm"] < fit["straight_cm"] - 1e-9:
-        warnings.append("The tubes are shorter than the %.3g cm straight line between the cells' end faces." % fit["straight_cm"])
-    if fit["top_cm"] > fit["radius_cm"]:
-        warnings.append("The pumping cell's top, with its walls, shield and OVC, reaches %.3g cm above the beam axis (axis at %.3g cm, half the cell %.3g cm, half the allowance %.3g cm), past the bore's %.3g cm radius."
-                        % (fit["top_cm"], P["y_pump_cm"], 0.5 * fit["d_pump_cm"], 0.5 * P["allow_cm"], fit["radius_cm"]))
-    if fit["side_cm"] > fit["radius_cm"]:
-        warnings.append("The target cell with its walls, shield and OVC reaches %.3g cm from the beam axis, past the bore's %.3g cm radius."
-                        % (fit["side_cm"], fit["radius_cm"]))
-    if fit["overlap"]:
-        warnings.append("The pumping cell overlaps the target cell: it starts downstream of the target's upstream end but sits too low to clear it.")
-    if fit["below_beam"]:
-        warnings.append("The pumping cell reaches below the beam axis.")
     if any(s["clamped"] for s in sol):
         warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
 
@@ -771,7 +729,7 @@ def compute(P):
         tau_x_target_s=Nt / G, tau_x_pump_s=Np / G,
         heat_mW={k: v * 1e3 for k, v in heat.items()},
         stages=stages,
-        Tc=Tc, T_shield=P["T_shield"], T_engine=P["T_engine"], cooler=cooler, fit=fit,
+        Tc=Tc, T_shield=P["T_shield"], T_engine=P["T_engine"], cooler=cooler,
         legs=[dict(profile=s["profile"], length_cm=s["length"] * 100,
                    nodes=[[n[0], n[1] * 100, n[2]] for n in leg["nodes"]],
                    free_cm=[f * 100 for f in leg["free"]],
@@ -801,12 +759,11 @@ DEFAULTS = dict(
     id_mm=8.0, wall_mm=1.0, length_cm=10.0,
     engine=True, engine_stage=False, engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
-    V_pump_cc=49.0, V_target_cc=100.0, L_pump_cm=10.0, L_target_cm=20.0,
-    z_pump_cm=10.0, y_pump_cm=10.0, bore_cm=10.0, allow_cm=2.0,
+    V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,
-    A_cold_cm2=130.0, eps_cold=0.05, other2_mW=0.0,
+    A_cold_cm2=300.0, eps_cold=0.05, other2_mW=0.0,
     cooler_map=True, cooler_pct=100.0,
 )
 
