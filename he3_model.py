@@ -10,7 +10,9 @@ Transport (per leg, 1-D along the tube):
     In each free (unclamped) section the energy flux F = -K dT/ds + mdot*cp*T is
     constant, so ds/dT = K(T) / (mdot*cp*T - F); F is found by Newton iteration.
   * clamped sections (cell ends, cold-end "engine", intercepts) are isothermal;
-    the heat each clamp removes is the jump in F across it.
+    the heat each clamp removes is the jump in F across it. The engine can be off
+    (the downcomer intercept alone then drives the loop) or held by the first stage
+    instead of a heater, in which case it sits at the first-stage temperature.
   * diffusion of polarization at uniform pressure: G = A / int ds/(n D);
     n*D = 1.32 eta(T)/m is independent of pressure.
   * thermosiphon (loop mode): buoyancy g*(int rho ds)_down - (int rho ds)_up
@@ -333,31 +335,40 @@ def thermosiphon(legA, legB, tube, p):
 
 # ------------------------------------------------------------------ geometry
 def build_legs(P):
+    """Riser first, then the downcomer, each from the target cell (s = 0) to the pumping cell (s = H).
+    The riser carries the engine clamp unless it is off; the intercept sits on the downcomer."""
     cm = 0.01
     Tc, Th = P["Tc"], P["Th"]
     H = P["length_cm"] * cm
-    use_int = P["intercept"] and P["mode"] in ("single", "loop")
     Ti, si = P["T_int"], P["s_int_cm"] * cm
-    errs = []
-
-    def cold_leg(clamp):
-        if use_int:
-            if not (clamp + 0.2 * cm < si < H - 0.2 * cm):
-                errs.append("Intercept height must sit between the cold clamp and the pumping cell.")
-                return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
-            return dict(nodes=[(Tc, clamp, "cold"), (Ti, 0.0, "intercept"), (Th, 0.0, "warm")],
-                        free=[si - clamp, H - si])
-        return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
-
-    if P["mode"] == "single":
-        return [cold_leg(0.0)], errs
+    loop = P["mode"] == "loop"
+    eng = loop and P["engine"]
     he, gap, Te = P["engine_cm"] * cm, P["gap_cm"] * cm, P["T_engine"]
-    if H - gap - he < 0.5 * cm:
+    errs = []
+    if eng and H - gap - he < 0.5 * cm:
         errs.append("Legs are too short for the engine section; lengthen them or shorten the engine.")
         he = max(0.0, H - gap - 0.5 * cm)
-    riser = dict(nodes=[(Tc, 0.0, "cold"), (Te, he, "engine"), (Th, 0.0, "warm")],
-                 free=[gap, H - gap - he])
-    return [riser, cold_leg(gap + he)], errs
+
+    def leg(clamp, engine, intercept):
+        nodes, free, s = [(Tc, clamp, "cold")], [], clamp
+        if engine:
+            nodes.append((Te, he, "engine"))
+            free.append(gap)
+            s += gap + he
+        if intercept:
+            if s + 0.2 * cm < si < H - 0.2 * cm:
+                nodes.append((Ti, 0.0, "intercept"))
+                free.append(si - s)
+                s = si
+            else:
+                errs.append("Intercept height must sit between the %s and the pumping cell." % ("engine" if engine else "cold clamp"))
+        nodes.append((Th, 0.0, "warm"))
+        free.append(H - s)
+        return dict(nodes=nodes, free=free)
+
+    if not loop:
+        return [leg(0.0, False, P["intercept"])], errs
+    return [leg(0.0, eng, False), leg(gap + he if eng else 0.0, False, P["intercept"])], errs
 
 
 # ------------------------------------------------------------------ evolution
@@ -462,19 +473,27 @@ def stage_loads(P, heat, tube, n_legs):
     First stage (T_shield): the intercept clamp, 300 K radiation onto the shield, other loads.
     Second stage (Tc): the cold clamps and target cell, an engine clamp that removes heat,
     shield radiation onto the cold surfaces, direct radiation down the tube bores, other loads.
-    A clamp that has to be heated (negative heat) is reported as a heater, not a cooler load."""
+    A clamp that has to be heated (negative heat) is reported as a heater, not a cooler load.
+    An engine held by the first stage puts its heat on that stage, with either sign: when the riser
+    section needs heat, the stage supplies it and its load drops by that much."""
     Th, Tc, T1 = P["Th"], P["Tc"], P["T_shield"]
     q_int, q_eng = heat["intercept"], heat["engine"]
+    on1 = engine_on_stage(P)
     rad1 = SIGMA * P["eps_shield"] * P["A_shield_m2"] * (Th ** 4 - T1 ** 4)
     rad2 = SIGMA * P["eps_cold"] * P["A_cold_cm2"] * 1e-4 * (T1 ** 4 - Tc ** 4)
     bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2.0, P["length_cm"] * 0.01) * (Th ** 4 - Tc ** 4)
-    first = dict(T=T1, intercept=max(0.0, q_int), radiation=rad1, other=P["other1_W"])
-    first["total"] = first["intercept"] + rad1 + first["other"]
-    second = dict(T=Tc, conduction=heat["cold"], engine=max(0.0, q_eng), radiation=rad2, bore=bore,
+    first = dict(T=T1, intercept=max(0.0, q_int), engine=q_eng if on1 else 0.0, radiation=rad1, other=P["other1_W"])
+    first["total"] = first["intercept"] + first["engine"] + rad1 + first["other"]
+    second = dict(T=Tc, conduction=heat["cold"], engine=0.0 if on1 else max(0.0, q_eng), radiation=rad2, bore=bore,
                   other=P["other2_mW"] * 1e-3)
     second["total"] = second["conduction"] + second["engine"] + rad2 + bore + second["other"]
     return dict(first=first, second=second,
-                intercept_heater=max(0.0, -q_int), engine_heater=max(0.0, -q_eng), warm_supply=-heat["warm"])
+                intercept_heater=max(0.0, -q_int), engine_heater=0.0 if on1 else max(0.0, -q_eng), warm_supply=-heat["warm"])
+
+
+def engine_on_stage(P):
+    """True when the riser engine is held by the first stage, at its temperature, instead of a heater."""
+    return P["mode"] == "loop" and P["engine"] and P["engine_stage"]
 
 
 # PT420-RM reference capacity curve (Cryomech, 50 and 60 Hz), read off the published chart:
@@ -559,10 +578,15 @@ def cooler_solve(P):
     a trim heater, or floats above it when the loads alone keep it warmer. The tube solution depends
     on Tc, so it is redone, with secant steps, until Tc settles; the loads change little with Tc.
     Map off: Tc and T_shield are taken as given, and the map gives each stage's capacity there.
-    Returns (P with the stage temperatures, the tube solution, the stage loads, the cooler state)."""
+    An engine held by the first stage sits at T_shield, so with the map on the tube solution is
+    also redone until the first-stage temperature settles.
+    Returns (P with the stage and engine temperatures, the tube solution, the stage loads, the cooler state)."""
     sc = P["cooler_pct"] / 100.0
     Tset = P["Tc"]
+    on1 = engine_on_stage(P)
     if not P["cooler_map"]:
+        if on1:
+            P = dict(P, T_engine=P["T_shield"])
         th = thermal(P)
         st = stage_loads(P, th[5], th[0], len(th[1]))
         Q1, Q2 = st["first"]["total"], st["second"]["total"]
@@ -576,7 +600,8 @@ def cooler_solve(P):
         return P, th, st, cooler
     Tc, T1, prev = Tset, 40.0, None
     for _ in range(30):
-        th = thermal(dict(P, Tc=Tc))
+        Te = T1 if on1 else P["T_engine"]
+        th = thermal(dict(P, Tc=Tc, T_engine=Te))
         for _ in range(100):
             st = stage_loads(dict(P, Tc=Tc, T_shield=T1), th[5], th[0], len(th[1]))
             Q1, Q2 = st["first"]["total"], st["second"]["total"]
@@ -588,7 +613,7 @@ def cooler_solve(P):
                 break
             T1 = T1n
         r = T2 - Tc
-        if abs(r) < 1e-7:
+        if abs(r) < 1e-7 and (not on1 or abs(T1 - Te) < 1e-7):
             break
         Tn = Tc - r * (Tc - prev[0]) / (r - prev[1]) if prev and r != prev[1] else T2   # secant on T2(Tc) - Tc
         prev = (Tc, r)
@@ -598,7 +623,7 @@ def cooler_solve(P):
     cooler = dict(map=True, T1=T1, T2=Tc, set=Tset, trim=trim, held=T2f <= Tset,
                   T1_free=T1f, T2_free=T2f, Q1=Q1, Q2=Q2,
                   off_map=Q1 / sc > PT420_Q1[-1] or (Q2 + trim) / sc > PT420_Q2[-1])
-    return dict(P, Tc=Tc, T_shield=T1), th, st, cooler
+    return dict(P, Tc=Tc, T_shield=T1, T_engine=Te), th, st, cooler
 
 
 def compute(P):
@@ -687,6 +712,10 @@ def compute(P):
         sc = P["cooler_pct"] / 100.0
         warnings.append("The loads run past the edge of the PT420 chart (%.3g W on the first stage, %.3g W on the second), so the stage temperatures are extrapolated."
                         % (PT420_Q1[-1] * sc, PT420_Q2[-1] * sc))
+    if P["mode"] == "loop" and not P["engine"] and not P["intercept"]:
+        warnings.append("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.")
+    if P["mode"] == "loop" and mdot < 0:
+        warnings.append("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.")
     if any(s["clamped"] for s in sol):
         warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
 
@@ -700,7 +729,7 @@ def compute(P):
         tau_x_target_s=Nt / G, tau_x_pump_s=Np / G,
         heat_mW={k: v * 1e3 for k, v in heat.items()},
         stages=stages,
-        Tc=Tc, T_shield=P["T_shield"], cooler=cooler,
+        Tc=Tc, T_shield=P["T_shield"], T_engine=P["T_engine"], cooler=cooler,
         legs=[dict(profile=s["profile"], length_cm=s["length"] * 100,
                    nodes=[[n[0], n[1] * 100, n[2]] for n in leg["nodes"]],
                    free_cm=[f * 100 for f in leg["free"]],
@@ -728,7 +757,7 @@ def run(params_json):
 DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
     id_mm=8.0, wall_mm=1.0, length_cm=10.0,
-    engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
+    engine=True, engine_stage=False, engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,

@@ -155,27 +155,27 @@
   }
 
   function build_legs(P) {
+    // riser first, then the downcomer; the riser carries the engine unless it is off, the downcomer the intercept
     const cm = 0.01, Tc = P.Tc, Th = P.Th, H = P.length_cm * cm;
-    const useInt = P.intercept && (P.mode === "single" || P.mode === "loop");
-    const Ti = P.T_int, si = P.s_int_cm * cm, errs = [];
-    function cold_leg(clamp) {
-      if (useInt) {
-        if (!(clamp + 0.2 * cm < si && si < H - 0.2 * cm)) {
-          errs.push("Intercept height must sit between the cold clamp and the pumping cell.");
-          return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
-        }
-        return { nodes: [[Tc, clamp, "cold"], [Ti, 0, "intercept"], [Th, 0, "warm"]], free: [si - clamp, H - si] };
-      }
-      return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
-    }
-    if (P.mode === "single") return [[cold_leg(0)], errs];
-    let he = P.engine_cm * cm; const gap = P.gap_cm * cm, Te = P.T_engine;
-    if (H - gap - he < 0.5 * cm) {
+    const Ti = P.T_int, si = P.s_int_cm * cm, loop = P.mode === "loop", eng = loop && P.engine;
+    let he = P.engine_cm * cm; const gap = P.gap_cm * cm, Te = P.T_engine, errs = [];
+    if (eng && H - gap - he < 0.5 * cm) {
       errs.push("Legs are too short for the engine section; lengthen them or shorten the engine.");
       he = Math.max(0, H - gap - 0.5 * cm);
     }
-    const riser = { nodes: [[Tc, 0, "cold"], [Te, he, "engine"], [Th, 0, "warm"]], free: [gap, H - gap - he] };
-    return [[riser, cold_leg(gap + he)], errs];
+    function leg(clamp, engine, intercept) {
+      const nodes = [[Tc, clamp, "cold"]], free = [];
+      let s = clamp;
+      if (engine) { nodes.push([Te, he, "engine"]); free.push(gap); s += gap + he; }
+      if (intercept) {
+        if (s + 0.2 * cm < si && si < H - 0.2 * cm) { nodes.push([Ti, 0, "intercept"]); free.push(si - s); s = si; }
+        else errs.push(`Intercept height must sit between the ${engine ? "engine" : "cold clamp"} and the pumping cell.`);
+      }
+      nodes.push([Th, 0, "warm"]); free.push(H - s);
+      return { nodes, free };
+    }
+    if (!loop) return [[leg(0, false, P.intercept)], errs];
+    return [[leg(0, eng, false), leg(eng ? gap + he : 0, false, P.intercept)], errs];
   }
 
   function expm2(A, t) {
@@ -239,16 +239,18 @@
     return 2 / (X + Math.sqrt(X * X - 4));
   }
   function stage_loads(P, heat, tube, n_legs) {
-    const Th = P.Th, Tc = P.Tc, T1 = P.T_shield, q_int = heat.intercept, q_eng = heat.engine;
+    const Th = P.Th, Tc = P.Tc, T1 = P.T_shield, q_int = heat.intercept, q_eng = heat.engine, on1 = engine_on_stage(P);
     const rad1 = SIGMA * P.eps_shield * P.A_shield_m2 * (Th ** 4 - T1 ** 4);
     const rad2 = SIGMA * P.eps_cold * P.A_cold_cm2 * 1e-4 * (T1 ** 4 - Tc ** 4);
     const bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2, P.length_cm * 0.01) * (Th ** 4 - Tc ** 4);
-    const first = { T: T1, intercept: Math.max(0, q_int), radiation: rad1, other: P.other1_W };
-    first.total = first.intercept + rad1 + first.other;
-    const second = { T: Tc, conduction: heat.cold, engine: Math.max(0, q_eng), radiation: rad2, bore, other: P.other2_mW * 1e-3 };
+    const first = { T: T1, intercept: Math.max(0, q_int), engine: on1 ? q_eng : 0, radiation: rad1, other: P.other1_W };
+    first.total = first.intercept + first.engine + rad1 + first.other;
+    const second = { T: Tc, conduction: heat.cold, engine: on1 ? 0 : Math.max(0, q_eng), radiation: rad2, bore, other: P.other2_mW * 1e-3 };
     second.total = second.conduction + second.engine + rad2 + bore + second.other;
-    return { first, second, intercept_heater: Math.max(0, -q_int), engine_heater: Math.max(0, -q_eng), warm_supply: -heat.warm };
+    return { first, second, intercept_heater: Math.max(0, -q_int), engine_heater: on1 ? 0 : Math.max(0, -q_eng), warm_supply: -heat.warm };
   }
+  // the riser engine is held by the first stage, at its temperature, instead of a heater
+  const engine_on_stage = P => P.mode === "loop" && P.engine && P.engine_stage;
 
   // PT420-RM reference capacity curve (Cryomech, 50 and 60 Hz), read off the published chart.
   const PT420_Q1 = [0, 25, 50, 75, 100], PT420_Q2 = [0, 0.5, 1.8, 5, 8, 10];
@@ -290,8 +292,9 @@
     return [tube, legs, errs, mdot, sol, heat];
   }
   function cooler_solve(P) {
-    const sc = P.cooler_pct / 100, Tset = P.Tc;
+    const sc = P.cooler_pct / 100, Tset = P.Tc, on1 = engine_on_stage(P);
     if (!P.cooler_map) {
+      if (on1) P = Object.assign({}, P, { T_engine: P.T_shield });
       const th = thermal(P), st = stage_loads(P, th[5], th[0], th[1].length);
       const Q1 = st.first.total, Q2 = st.second.total, [T1f, T2f] = pt_map(Q1, Q2, sc);
       st.first.capacity = pt_load1(Q2, P.T_shield, sc);
@@ -301,9 +304,10 @@
         off_map: Q1 / sc > PT420_Q1[PT420_Q1.length - 1] || Q2 / sc > PT420_Q2[PT420_Q2.length - 1] };
       return [P, th, st, cooler];
     }
-    let Tc = Tset, T1 = 40, prev = null, th, st, Q1, Q2, T1f, T2f, cap2, trim, T2;
+    let Tc = Tset, T1 = 40, prev = null, th, st, Q1, Q2, T1f, T2f, cap2, trim, T2, Te;
     for (let n = 0; n < 30; n++) {
-      th = thermal(Object.assign({}, P, { Tc }));
+      Te = on1 ? T1 : P.T_engine;
+      th = thermal(Object.assign({}, P, { Tc, T_engine: Te }));
       for (let m = 0; m < 100; m++) {
         st = stage_loads(Object.assign({}, P, { Tc, T_shield: T1 }), th[5], th[0], th[1].length);
         Q1 = st.first.total; Q2 = st.second.total;
@@ -316,7 +320,7 @@
         T1 = T1n;
       }
       const r = T2 - Tc;
-      if (Math.abs(r) < 1e-7) break;
+      if (Math.abs(r) < 1e-7 && (!on1 || Math.abs(T1 - Te) < 1e-7)) break;
       const Tn = prev && r !== prev[1] ? Tc - r * (Tc - prev[0]) / (r - prev[1]) : T2;   // secant on T2(Tc) - Tc
       prev = [Tc, r];
       Tc = Math.max(Tset, Tn);
@@ -325,7 +329,7 @@
     st.second.capacity = cap2;
     const cooler = { map: true, T1, T2: Tc, set: Tset, trim, held: T2f <= Tset, T1_free: T1f, T2_free: T2f, Q1, Q2,
       off_map: Q1 / sc > PT420_Q1[PT420_Q1.length - 1] || (Q2 + trim) / sc > PT420_Q2[PT420_Q2.length - 1] };
-    return [Object.assign({}, P, { Tc, T_shield: T1 }), th, st, cooler];
+    return [Object.assign({}, P, { Tc, T_shield: T1, T_engine: Te }), th, st, cooler];
   }
 
   function compute(P0) {
@@ -379,11 +383,15 @@
       const sc = P.cooler_pct / 100;
       warnings.push(`The loads run past the edge of the PT420 chart (${g3(PT420_Q1[PT420_Q1.length - 1] * sc)} W on the first stage, ${g3(PT420_Q2[PT420_Q2.length - 1] * sc)} W on the second), so the stage temperatures are extrapolated.`);
     }
+    if (P.mode === "loop" && !P.engine && !P.intercept)
+      warnings.push("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.");
+    if (P.mode === "loop" && mdot < 0)
+      warnings.push("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.");
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
-      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, cooler,
+      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler,
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
       production_atoms_s: g_b * Mss * Np,
