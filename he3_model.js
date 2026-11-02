@@ -394,6 +394,8 @@
   }
   function run(json) { try { return JSON.stringify(compute(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }
   const PT420 = { Q1: PT420_Q1, Q2: PT420_Q2, T1: PT420_T1, T2: PT420_T2, map: pt_map, load1: pt_load1, load2: pt_load2 };
-  root.He3ModelJS = { run, compute, PT420 };
+  // gas, glass and radiation helpers, for the page's formula section
+  const props = { eta, k_gas, n_num, rho, nD, k_glass, disk_view, KB, M_ATOM, CP, SIGMA, ETA_300, ETA_EXP, RHO_D_OVER_ETA };
+  root.He3ModelJS = { run, compute, PT420, props };
   if (typeof module !== "undefined") module.exports = { run, compute };
 })(typeof window !== "undefined" ? window : globalThis);

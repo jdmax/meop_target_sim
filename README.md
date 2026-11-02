@@ -25,6 +25,8 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 - **Heat loads on the two cooler stages** (the **Heat loads** tab). The first stage, at the shield temperature, takes the intercept, radiation from 300 K onto the shield, and any other loads you enter. The second stage, at the target temperature, takes the conduction into the target cell and cold clamps, an engine clamp that has to remove heat, radiation from the shield onto the cold surfaces, the direct line of sight down each tube bore, and its own other loads. Radiation is `σεA(T_hot⁴ − T_cold⁴)` with an effective emissivity for each pair of surfaces. Clamps that need heating are listed as heaters, not cooler loads.
 - **The cryocooler (PT420 capacity map).** The stage temperatures come from Cryomech's PT420-RM reference capacity chart, read off at its 30 points and interpolated bilinearly in the two loads. The first stage floats at whatever temperature the two loads give. A trim heater holds the second stage at the target set point; if the loads alone keep it warmer, the target runs at that temperature, and the whole model uses it. The tube solution depends on the target temperature, so it is re-solved with secant steps until the two agree. A performance setting derates the chart; the certified rating, 1.8 W at 4.2 K with 50 W at 45 K, is a little below the reference curve. With the map off, both temperatures are fixed and the map gives each stage's capacity there. The **Heat loads** tab plots the operating point on the chart; hover over it to read the loads that give any pair of stage temperatures.
 
+The **Formulas** tab lays these out as eleven steps in the order the model runs them. Each step gives its equations, what they apply to, how the result is reached, and the numbers they produce for the current settings.
+
 **Not modeled:** the temperature drop between the second stage and the target cell, radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
 
 ## Saving figures, settings and data
@@ -44,8 +46,8 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 
 | File | Purpose |
 |---|---|
-| `index.html` | The page: controls, schematic, the Polarization and Heat loads tabs, source listing |
-| `he3_model.py` | The model. The page fetches this file and runs it in Pyodide; its listing is shown on the page |
+| `index.html` | The page: controls, schematic, the Polarization, Heat loads and Formulas tabs |
+| `he3_model.py` | The model. The page fetches this file and runs it in Pyodide |
 | `he3_model.js` | Line-for-line JavaScript port, used for instant previews while a slider is dragged and as a fallback if Python can't start |
 | `.github/workflows/pages.yml` | Deploys the three site files to GitHub Pages on each push to `main` |
 
@@ -53,7 +55,7 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 
 Edit `he3_model.py` and push. The page calls `run(params_json)` and expects the same JSON keys back.
 
-After each Python run, the page compares the result against the JavaScript port. While they agree, it uses the JavaScript port for instant slider previews. If they differ, the status line under "Model source" says so and the page waits for Python instead. To restore instant previews, mirror the change in `he3_model.js`.
+After each Python run, the page compares the result against the JavaScript port. While they agree, it uses the JavaScript port for instant slider previews. If they differ, the status line at the bottom of the Formulas tab says so and the page waits for Python instead. To restore instant previews, mirror the change in `he3_model.js`. If the change alters an equation, update its step in the `FX` list in `index.html`.
 
 ## Run locally
 

@@ -202,6 +202,7 @@ table.amps td:first-child { font-family: var(--font-body); color: var(--muted); 
 }
 .tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); border-color: var(--line); }
 .tabs button:hover { color: var(--ink); }
+@media (max-width: 460px) { .tabs button { padding: 8px 10px; } }
 .panel-group { display: grid; gap: 18px; min-width: 0; }
 
 /* heat tab */
@@ -229,22 +230,33 @@ table.loads tr.sum td { border-top: 1px solid var(--line); font-weight: 600; }
 .legend i.ring { background: none !important; border: 2px solid; }
 .hint.bad { color: var(--bad); }
 
-/* source */
-details.src > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-details.src > summary::-webkit-details-marker { display: none; }
-details.src > summary h2::before { content: "▸ "; }
-details.src[open] > summary h2::before { content: "▾ "; }
-.src-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
-#code {
-  margin: 0 0 10px; max-height: 560px; overflow: auto; font: 13px/1.5 var(--font-mono); tab-size: 4;
-  background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; white-space: pre;
-}
-#code .tc { color: var(--muted); font-style: italic; }
-#code .ts { color: var(--accent); }
-#srcName { color: var(--muted); font-size: 13px; }
-#srcStatus { font-size: 13.5px; color: var(--muted); }
+/* formulas */
+.fx-intro { font-size: 13.5px; max-width: 95ch; }
+.fx-intro a { color: var(--accent); }
+.fx { margin: 10px 0 12px; border-top: 1px solid var(--line); }
+.fx details { border-bottom: 1px solid var(--line); }
+.fx summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; padding: 9px 2px; }
+.fx summary::-webkit-details-marker { display: none; }
+.fx summary .n { font: 600 12px var(--font-mono); color: var(--muted); min-width: 2.4em; }
+.fx summary .n::before { content: "▸ "; }
+.fx details[open] summary .n::before { content: "▾ "; }
+.fx summary h3 { font-size: 16px; font-weight: 600; margin: 0; flex: 1 1 18em; }
+.fx summary .res { font: 13.5px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); margin-left: auto; }
+.fx .body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(230px, 1fr); gap: 6px 28px; padding: 0 2px 14px calc(2.4em + 14px); }
+@media (max-width: 760px) { .fx .body { grid-template-columns: minmax(0, 1fr); padding-left: 2px; } }
+.fx .where { margin: 0 0 6px; font-size: 14px; }
+.fx .where b { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-right: 6px; }
+.fx .eq { font: 15.5px/1.6 var(--font-body); white-space: nowrap; overflow-x: auto; padding: 6px 10px 0; background: var(--bg); border-radius: 6px 6px 0 0; margin-top: 6px; }
+.fx .eq.solo { padding-bottom: 6px; border-radius: 6px; }
+.fx .note { font-size: 12.5px; color: var(--muted); padding: 0 10px 6px; background: var(--bg); border-radius: 0 0 6px 6px; }
+.fx .how { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); }
+.fx .how a { color: var(--accent); }
+.fx .vals h4 { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 6px 0 0; }
+.fx .vals dl.facts { margin-top: 4px; }
 .notes { color: var(--muted); font-size: 13.5px; margin: 0; }
 .notes li { margin: 3px 0; }
+footer.site { color: var(--muted); font-size: 13.5px; text-align: center; padding-top: 4px; border-top: 1px solid var(--line); }
+footer.site a { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .engine .dot { animation: none !important; } }
 </style>
 </head>
@@ -253,7 +265,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
   <header>
     <div>
       <h1>³He Two-Cell Exchange</h1>
-      <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and its source is listed at the bottom.</p>
+      <p class="sub">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and the Formulas tab lays out its equations step by step.</p>
       <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
     </div>
     <div class="head-actions">
@@ -309,6 +321,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
       <div class="tabs" role="tablist" aria-label="Views">
         <button type="button" role="tab" id="tab-pol" data-tab="pol" aria-selected="true" aria-controls="pol-side pol-below">Polarization</button>
         <button type="button" role="tab" id="tab-heat" data-tab="heat" aria-selected="false" aria-controls="heat-side heat-below">Heat loads</button>
+        <button type="button" role="tab" id="tab-fx" data-tab="fx" aria-selected="false" aria-controls="fx-panel">Formulas</button>
       </div>
       <div class="stage">
         <section class="card scene-wrap" aria-label="Cell schematic">
@@ -435,23 +448,22 @@ details.src[open] > summary h2::before { content: "▾ "; }
       </section>
       </div>
 
-      <section class="card">
-        <details class="src" id="srcDetails">
-          <summary><h2>Model source (Python)</h2><span id="srcStatus">Waiting for Python…</span></summary>
-          <div class="src-bar">
-            <span class="mono" id="srcName">he3_model.py</span>
-            <button class="btn ghost" type="button" id="copyCode">Copy</button>
-          </div>
-          <pre id="code" tabindex="0" aria-label="Python model source"><code>Loading…</code></pre>
-          <ul class="notes">
-            <li>This is the code that produced the numbers on this page. Its entry point <span class="mono">run(params_json)</span> takes the inputs as JSON and returns every result shown.</li>
-            <li>The two-cell target concept is described in <a href="https://arxiv.org/abs/2106.06606">arXiv:2106.06606</a>; the pumping-cell probe and the rate-equation terms follow <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</li>
-            <li>Not modeled: radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
-          </ul>
-        </details>
+      <section class="card" id="fx-panel" role="tabpanel" aria-labelledby="tab-fx" hidden>
+        <div class="section-head">
+          <h2 id="fxHead">The model, step by step</h2>
+          <button class="btn ghost" type="button" id="fxAll">Open all</button>
+        </div>
+        <p class="hint fx-intro">Every step of the model in the order it runs, with where each equation applies and the numbers it gives for the current settings. The cooler steps (1–5) set the target temperature T<sub>c</sub>; the rate equations (6–11) then use it. Equation numbers refer to <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</p>
+        <div class="fx" id="fx"></div>
+        <ul class="notes">
+          <li id="srcStatus">Waiting for Python…</li>
+          <li>The code behind these steps is <a href="https://github.com/jdmax/meop_target_sim/blob/main/he3_model.py">he3_model.py</a>; the page calls its <span class="mono">run(params_json)</span>, which returns every result shown. The two-cell target concept is described in <a href="https://arxiv.org/abs/2106.06606">arXiv:2106.06606</a>.</li>
+          <li>Not modeled: the temperature drop between the second stage and the target cell, radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
+        </ul>
       </section>
     </main>
   </div>
+  <footer class="site">Model and interface by <a href="https://orcid.org/0000-0003-2710-4646">J. Maxwell</a>, Jefferson Laboratory, 2026. Source on <a href="https://github.com/jdmax/meop_target_sim">GitHub</a>.</footer>
 </div>
 
 <script>
@@ -738,6 +750,7 @@ function show(res, source) {
     `<div><span style="color:var(--muted)">${richHTML("a = τ_x/T_{1t},  b = (N_t/N_p)·T_b/T_{1t};  P_t = M_ss/(1 + a + b)")}</span></div>`;
 
   showHeat();
+  showFormulas();
 
   $("sealedHint").innerHTML = richHTML(`Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`);
 
@@ -1015,13 +1028,17 @@ function setTab(tab, focus) {
   });
   ["pol-side", "pol-below"].forEach(id => { $(id).hidden = tab !== "pol"; });
   ["heat-side", "heat-below"].forEach(id => { $(id).hidden = tab !== "heat"; });
+  $("fx-panel").hidden = tab !== "fx";
+  document.querySelector(".stage").hidden = tab === "fx";     // the formulas take the full width
   try { localStorage.setItem("he3x-tab", tab); } catch (e) {}
   drawCharts();      // the chart canvases had no size while hidden
 }
+const TABS = ["pol", "heat", "fx"];
 document.querySelectorAll(".tabs [role=tab]").forEach(b => {
   b.addEventListener("click", () => setTab(b.dataset.tab));
   b.addEventListener("keydown", e => {
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") setTab(b.dataset.tab === "pol" ? "heat" : "pol", true);
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (step) setTab(TABS[(TABS.indexOf(b.dataset.tab) + step + TABS.length) % TABS.length], true);
   });
 });
 
@@ -1755,23 +1772,239 @@ INC.forEach(k => $("inc-" + k).addEventListener("change", () => { saveExportPref
 ["figTitle", "figNotes"].forEach(id => $(id).addEventListener("input", () => { saveExportPrefs(); schedulePreview(250); }));
 window.addEventListener("resize", () => schedulePreview(250));
 
-/* ---------------------------------------------------------------- source panel */
-const codeEl = $("code").firstElementChild;
-const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const TRIPLE_SQ = "'".repeat(3);
-const HL_RE = new RegExp(
-  '("""[\\s\\S]*?"""|' + TRIPLE_SQ + "[\\s\\S]*?" + TRIPLE_SQ + ")" +       // docstrings
-  "|(#[^\\n]*)" +                                                              // comments
-  '|("(?:[^"\\\\\\n]|\\\\.)*"|' + "'(?:[^'\\\\\\n]|\\\\.)*')", "g");          // string literals
-function highlight(src) {
-  let out = "", last = 0, m;
-  HL_RE.lastIndex = 0;
-  while ((m = HL_RE.exec(src))) {
-    out += esc(src.slice(last, m.index));
-    out += (m[1] || m[2]) ? `<span class="tc">${esc(m[0])}</span>` : `<span class="ts">${esc(m[0])}</span>`;
-    last = HL_RE.lastIndex;
-  }
-  return out + esc(src.slice(last));
+/* ---------------------------------------------------------------- formulas */
+/* The model's steps in the order it runs them. Each gives where it applies, its equations as
+   [equation, note] rows in the symbol markup, how the result is reached, and the current numbers. */
+const fxPct = v => (v * 100).toFixed(2) + "%";
+const fxRate = v => (v * 6000).toPrecision(3) + " %/min";     // a polarization rate, from fraction per second
+function fxContext() {
+  const P = params, X = He3ModelJS.props, d = P.id_mm * 1e-3, r = d / 2, w = P.wall_mm * 1e-3;
+  const A_gas = Math.PI * r * r, A_wall = Math.PI * ((r + w) ** 2 - r * r);
+  return { P, X, p: P.p_mbar * 100, Tc: R.Tc, Th: P.Th, Tsh: R.T_shield, d, r, A_gas, A_wall,
+    loop: P.mode === "loop", K: T => A_wall * X.k_glass(T) + A_gas * X.k_gas(T),
+    legNames: R.legs.length > 1 ? ["riser", "downcomer"] : ["tube"] };
+}
+const FX = [
+  { title: "Gas and glass properties",
+    where: c => "The gas and glass along each tube, at the local temperature T. The pressure p is the same everywhere.",
+    eqs: c => [
+      ["η(T) = η_300 (T / 300 K)^{0.68}", "³He viscosity; η_300 = 17.2 µPa·s, the ⁴He value scaled by √(3/4)"],
+      ["k_gas = (15/4)(R/M) η", "gas thermal conductivity, Eucken relation for a monatomic gas"],
+      ["n = p / (k_B T),   ρ = m n", "number and mass density of an ideal gas"],
+      ["nD = 1.32 η / m", "self-diffusion (Chapman–Enskog); the pressure cancels"],
+      ["K(T) = A_wall k_glass(T) + A_gas k_gas(T)", "conductance × length of one tube, wall plus gas; k_glass is a borosilicate table interpolated in log T"]],
+    how: c => "These are the only material inputs. Because nD ∝ T^{0.68}, diffusion is far slower at the cold end, which is why the coldest part of each tube controls the exchange (step 6).",
+    vals: ({ P, X, p, Tc, Th, K, A_gas }) => [
+      ["p", `${P.p_mbar} mbar = ${+p.toPrecision(4)} Pa`],
+      ["η(T_c), η(T_h)", `${(X.eta(Tc) * 1e6).toPrecision(3)}, ${(X.eta(Th) * 1e6).toPrecision(3)} µPa·s`],
+      ["n(T_c)", fmtSci(X.n_num(Tc, p)) + " /m³"], ["n(T_h)", fmtSci(X.n_num(Th, p)) + " /m³"],
+      ["nD(T_c)", fmtSci(X.nD(Tc)) + " /(m·s)"], ["nD(T_h)", fmtSci(X.nD(Th)) + " /(m·s)"],
+      ["K(T_c)", fmtSci(K(Tc)) + " W·m/K"], ["K(T_h)", fmtSci(K(Th)) + " W·m/K"],
+      ["  gas share of K(T_c)", (100 * A_gas * X.k_gas(Tc) / K(Tc)).toFixed(0) + "%"]],
+    res: ({ X, Tc, Th }) => `nD(T_h)/nD(T_c) = ${(X.nD(Th) / X.nD(Tc)).toFixed(1)}` },
+
+  { title: "Temperature profile along each tube",
+    where: c => `Each free section of ${c.loop ? "the riser and the downcomer" : "the tube"}, between the clamps that fix the temperature: the target cell at T_c` +
+      (c.loop ? ", the engine clamp" : "") + (c.P.intercept ? ", the intercept" : "") + " and the pumping cell at T_h.",
+    eqs: c => [
+      ["F = −K(T) dT/ds + ṁ c_p T", "energy flux up the tube, constant along a free section; c_p = (5/2)R/M"],
+      ["ds/dT = K(T) / (ṁ c_p T − F)", "rearranged, the profile T(s) follows from F"],
+      ["∫ K(T) dT / (ṁ c_p T − F) = L", "taken between the clamp temperatures at the two ends of a section of length L; Newton iteration finds F"],
+      ["Q_clamp = F_in − F_out", "heat a clamp removes; negative means it has to be heated"]],
+    how: c => c.loop
+      ? "The riser carries ṁ upward and the downcomer carries it back down, so the enthalpy term moves heat as well as conduction. ṁ comes from step 3, which re-solves these profiles for each trial flow."
+      : "With a single tube there is no flow, ṁ = 0, and this is plain conduction: F = −(1/L)∫K dT.",
+    vals: ({ P, loop }) => {
+      const h = R.heat_mW, rows = [["Into the target cell and cold clamps, Q_cold", fmtP(h.cold / 1e3)]];
+      if (P.intercept) rows.push([`Intercept at ${P.T_int} K, Q_int`, fmtP(h.intercept / 1e3)]);
+      if (loop) rows.push([`Engine clamp at ${P.T_engine} K, Q_eng`, fmtP(h.engine / 1e3)]);
+      rows.push(["Supplied by the pumping cell", fmtP(-h.warm / 1e3)]);
+      return rows;
+    },
+    res: c => `Q_cold = ${fmtP(R.heat_mW.cold / 1e3)}` },
+
+  { title: "Convection loop flow",
+    where: c => c.loop ? "The loop: the riser with its engine clamp and the downcomer, both spanning the height between the cells."
+      : "Loop mode only. With a single tube there is no circulation (ṁ = 0), and the exchange is by diffusion alone.",
+    eqs: c => [
+      ["g (∫ρ ds)_down − g (∫ρ ds)_up = ṁ (R_up + R_down)", "buoyancy of the colder, denser downcomer balances laminar friction"],
+      ["R = (128 / π d⁴) ∫ ν ds,   ν = η/ρ", "Poiseuille resistance of each leg, along its temperature profile"],
+      ["Re = 4|ṁ| / (π d η(T_c))", "Reynolds number at the cold end"]],
+    how: c => "ρ(s) and ν(s) follow the profiles of step 2, which depend on ṁ in turn, so the profiles are re-solved for each trial flow and the balance is found by false position.",
+    vals: ({ P, loop }) => loop ? [
+      ["ṁ", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"],
+      ["  in kg/s", fmtSci(R.mdot_mg_h / 3.6e9)],
+      ["Engine temperature", P.T_engine + " K"],
+      ["Re at the cold end", R.Re.toFixed(1)]] : [["ṁ", "0, single tube"]],
+    res: ({ loop }) => loop ? `ṁ = ${R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)} mg/h, Re = ${R.Re.toFixed(1)}` : "ṁ = 0, single tube" },
+
+  { title: "Heat loads on the two cooler stages",
+    where: c => "First stage at T_sh: the intercept and the radiation shield. Second stage at T_c: the target cell, the cold clamps and the engine.",
+    eqs: c => [
+      ["Q_1 = Q_int + σ ε_sh A_sh (T_h⁴ − T_sh⁴) + Q_{1,other}", "intercept clamp from step 2, 300 K radiation onto the shield, other loads"],
+      ["Q_2 = Q_cold + Q_eng + σ ε_c A_c (T_sh⁴ − T_c⁴) + Q_bore + Q_{2,other}", "conduction, an engine clamp that removes heat, shield radiation onto the cold surfaces"],
+      ["Q_bore = n_tubes σ A_gas F_view (T_h⁴ − T_c⁴)", "direct line of sight from the warm end down each bore"],
+      ["F_view = (X − √(X² − 4)) / 2,   X = 2 + (L/r)²", "view factor between coaxial disks of radius r a distance L apart"]],
+    how: c => "A clamp that has to be heated (Q < 0) is listed as a heater, not a cooler load. T_sh and T_c are the stage temperatures from step 5.",
+    vals: ({ P, X, r }) => {
+      const S = R.stages, rows = [];
+      if (P.intercept) rows.push(["  Q_int", fmtP(S.first.intercept)]);
+      rows.push(["  300 K → shield", fmtP(S.first.radiation)], ["  Q_{1,other}", fmtP(S.first.other)], ["Q_1", fmtP(S.first.total)],
+        ["  Q_cold", fmtP(S.second.conduction)]);
+      if (S.second.engine > 0) rows.push(["  Q_eng", fmtP(S.second.engine)]);
+      rows.push(["  shield → cold surfaces", fmtP(S.second.radiation)],
+        [`  Q_bore, F_view = ${fmtSci(X.disk_view(r, P.length_cm * 0.01))}`, fmtP(S.second.bore)],
+        ["  Q_{2,other}", fmtP(S.second.other)], ["Q_2", fmtP(S.second.total)]);
+      return rows;
+    },
+    res: c => `Q_1 = ${fmtP(R.stages.first.total)}, Q_2 = ${fmtP(R.stages.second.total)}` },
+
+  { title: "PT420 stage temperatures",
+    where: ({ P }) => P.cooler_map
+      ? "The cooler with the map on: the first stage floats wherever the loads put it, and a trim heater holds the second stage at the set point T_set."
+      : "The cooler with the map off: T_c and T_sh are fixed at your inputs, and the map gives each stage's capacity there.",
+    eqs: ({ P }) => P.cooler_map ? [
+      ["(T_sh, T_2) = M(Q_1, Q_2) = chart(Q_1/s, Q_2/s)", "PT420-RM capacity chart, bilinear between its points (Q_1 = 0–100 W, Q_2 = 0–10 W) and extrapolated past them; s = cooler performance"],
+      ["Q_{2,cap} = s · chart_2^{−1}(Q_1/s, T_set)", "second-stage load that puts the stage at the set point"],
+      ["Q_trim = Q_{2,cap} − Q_2   if  M_2(Q_1, Q_2) < T_set,   else 0", "trim heater, which spends the spare capacity"],
+      ["(T_sh, T_c) = M(Q_1, Q_2 + Q_trim)", "T_c = T_set while the trim heater is on; otherwise T_c floats above it"],
+      ["T_c ← T_c − r (T_c − T_c′) / (r − r′),   r = T_2(T_c) − T_c", "secant steps: steps 2–4 depend on T_c, so they are redone until T_c settles; T_sh is iterated inside each step"]] : [
+      ["T_c, T_sh = inputs", "both stage temperatures fixed"],
+      ["Q_{2,cap} = s · chart_2^{−1}(Q_1/s, T_c),   Q_{1,cap} = s · chart_1^{−1}(Q_2/s, T_sh)", "capacity of each stage at its temperature"],
+      ["(T_sh, T_2)_free = M(Q_1, Q_2)", "where the cooler would settle with these loads"]],
+    how: c => "The rest of the model runs at this T_c: it sets N_t (step 7) and the tube profiles behind G (step 6).",
+    vals: ({ P }) => {
+      const C = R.cooler, S = R.stages, cap = q => q > 0 ? fmtP(q) : "out of reach";
+      const rows = [["Performance s", P.cooler_pct + "%"], ["Free-running M(Q_1, Q_2)", `${fmtK(C.T1_free)} K, ${fmtK(C.T2_free)} K`]];
+      if (C.map) rows.push([`Q_{2,cap} at T_set = ${fmtK(C.set)} K`, cap(S.second.capacity)], ["Trim heater Q_trim", fmtP(C.trim)]);
+      else rows.push([`Q_{1,cap} at ${fmtK(R.T_shield)} K`, cap(S.first.capacity)], [`Q_{2,cap} at ${fmtK(R.Tc)} K`, cap(S.second.capacity)]);
+      rows.push(["T_sh", fmtK(R.T_shield) + " K"], ["T_c", fmtK(R.Tc) + " K" + (C.map ? (C.held ? ", at the set point" : ", above the set point") : "")]);
+      return rows;
+    },
+    res: ({ P }) => `T_c = ${fmtK(R.Tc)} K, T_sh = ${fmtK(R.T_shield)} K` + (P.cooler_map && R.cooler.trim > 0 ? `, Q_trim = ${fmtP(R.cooler.trim)}` : "") },
+
+  { title: "Exchange conductance G",
+    where: c => "Each tube, carrying polarization between the cells at uniform pressure. G is the number of atoms exchanged per second per unit polarization difference.",
+    eqs: c => [
+      ["G_diff = Σ_tubes A_gas / ∫ ds/(nD)", "diffusion along each tube's temperature profile from step 2"],
+      ["G_conv = |ṁ| / m", "atoms carried around the loop per second (loop mode)"],
+      ["G = G_diff + G_conv", ""]],
+    how: c => "nD is smallest where the gas is cold, so the coldest few centimetres of each tube set G_diff.",
+    vals: ({ loop, legNames }) => {
+      const rows = R.legs.map((l, i) => [`G_diff, ${legNames[i]}`, fmtSci(l.G_diff) + " /s"]);
+      if (loop) rows.push(["G_conv", fmtSci(R.G_conv) + " /s"]);
+      rows.push(["G", fmtSci(R.G) + " /s"]);
+      return rows;
+    },
+    res: c => `G = ${fmtSci(R.G)} /s` },
+
+  { title: "Atoms in each cell",
+    where: c => "The two cells, filled to p at their temperatures. Gas in the tubes is not counted in either cell.",
+    eqs: c => [
+      ["N_p = p V_p / (k_B T_h),   N_t = p V_t / (k_B T_c)", ""],
+      ["N = N_p + N_t", ""],
+      ["N_p/G,   N_t/G", "exchange times: how long the conductance takes to turn over each cell's atoms"]],
+    how: c => "",
+    vals: c => [
+      ["N_p", fmtSci(R.Np)], ["N_t", fmtSci(R.Nt)], ["N_t/N_p", (R.Nt / R.Np).toPrecision(3)],
+      ["N_p/G", fmtTime(R.tau_x_pump_s)], ["N_t/G", fmtTime(R.tau_x_target_s)], ["In the tubes", fmtSci(R.N_tubes)]],
+    res: c => `N_t/N_p = ${(R.Nt / R.Np).toPrecision(3)}` },
+
+  { title: "Build-up: rate equations with the laser on",
+    where: ({ P }) => `From t = 0 with both cells unpolarized, laser and discharge on, for ${fmtTime(P.on_h * 3600)}.`,
+    eqs: c => [
+      ["dP_p/dt = (M_ss − P_p)/T_b − (G/N_p)(P_p − P_t)", "pumping cell: MEOP drives P_p toward M_ss at rate 1/T_b, and exchange carries polarization out"],
+      ["dP_t/dt = (G/N_t)(P_p − P_t) − P_t/T_{1t}", "target cell: exchange brings polarization in, and it relaxes with T_{1t}"],
+      ["dP/dt = A P + b,   A = (−1/T_b − G/N_p,  G/N_p;   G/N_t,  −G/N_t − 1/T_{1t}),   b = (M_ss/T_b, 0)", "the same pair as a linear system in P = (P_p, P_t)"],
+      ["P(t) = P_{∞} + e^{At} (P(0) − P_{∞}),   P_{∞} = −A^{−1} b","exact solution, with e^{At} from the eigenvalues of A"],
+      ["τ_{1,2} = −1/λ_{1,2}(A)", "the two build-up time constants"]],
+    how: c => "M_ss and T_b come from fitting M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field, so the pumping cell's own relaxation is already inside them. The 90% time is found by bisection on P_t(t).",
+    vals: ({ P }) => [
+      ["T_b", fmtTime(P.T_b_s)], ["N_p/G", fmtTime(R.tau_x_pump_s)], ["N_t/G", fmtTime(R.tau_x_target_s)], ["T_{1t}", fmtTime(P.T1t_h * 3600)],
+      ["τ_1 (slow), τ_2 (fast)", fmtTime(R.times_s[0]) + ", " + fmtTime(R.times_s[1])],
+      ["P_t reaches 90% of steady state in", fmtTime(R.t90_target_s)],
+      ["At the end of pumping: P_p, P_t", fxPct(R.paper.Mp0) + ", " + fxPct(R.paper.Mt0)]],
+    res: c => `τ_1 = ${fmtTime(R.times_s[0])}, τ_2 = ${fmtTime(R.times_s[1])}` },
+
+  { title: "Steady state",
+    where: c => "Long pumping: both derivatives in step 8 set to zero.",
+    eqs: c => [
+      ["P_t = M_ss / (1 + a + b)", ""],
+      ["a = N_t / (G T_{1t})", "exchange too slow: the target relaxes before it is refilled"],
+      ["b = (N_t/N_p)(T_b / T_{1t})", "MEOP can't keep up: the pumping cell must also feed the target's relaxation"],
+      ["P_p = (1 + a) P_t", "the pumping cell sits above the target by the exchange loss"]],
+    how: c => "",
+    vals: ({ P }) => [
+      ["a", R.loss_exchange.toPrecision(3)], ["b", R.loss_capacity.toPrecision(3)], ["M_ss", P.M_ss + "%"],
+      ["P_t", fxPct(R.ss_target)], ["P_p", fxPct(R.ss_pump)], ["P_t/P_p = 1/(1 + a)", (R.ss_target / R.ss_pump).toFixed(3)]],
+    res: c => `P_t = ${fxPct(R.ss_target)}, P_p = ${fxPct(R.ss_pump)}` },
+
+  { title: "Zeroing the pumping cell: decay constants (eqs. 2 and 4)",
+    where: c => "After the build-up: laser shuttered and the pumping cell zeroed. The discharge stays on so the polarimeter can read M_p, the pumping cell now relaxes with τ_p, and nothing pumps.",
+    eqs: c => [
+      ["dM_p/dt = −(1/τ_p + (N_t/N)/t_ex) M_p + ((N_t/N)/t_ex) M_t", "eq. 2, pumping cell"],
+      ["dM_t/dt = ((N_p/N)/t_ex) M_p − (1/τ_t + (N_p/N)/t_ex) M_t", "eq. 2, target cell; τ_t = T_{1t}"],
+      ["t_ex = N_p N_t / (N G)", "so (N_t/N)/t_ex = G/N_p and (N_p/N)/t_ex = G/N_t: step 8 with the pumping term removed"],
+      ["1/τ_{s,l} = ½(1/τ_p + 1/τ_t + 1/t_ex) ± ½√(1/t_ex² + Δ² + 2Δ(N_t − N_p)/(N t_ex)),   Δ = 1/τ_p − 1/τ_t", "eq. 4: the short (+) and long (−) decay constants"]],
+    how: c => "",
+    vals: c => {
+      const pp = R.paper;
+      return [["N_p/N, N_t/N", pp.Np_N.toPrecision(3) + ", " + pp.Nt_N.toPrecision(3)], ["t_ex", fmtTime(pp.t_ex)],
+        ["τ_p", fmtTime(pp.tau_p)], ["τ_t", fmtTime(pp.tau_t)], ["Δ", fmtSci(1 / pp.tau_p - 1 / pp.tau_t) + " /s"],
+        ["τ_s", fmtTime(pp.tau_s)], ["τ_l", fmtTime(pp.tau_l)]];
+    },
+    res: c => `τ_s = ${fmtTime(R.paper.tau_s)}, τ_l = ${fmtTime(R.paper.tau_l)}` },
+
+  { title: "Zeroing: what the polarimeter sees (eq. 3)",
+    where: c => "The signal after zeroing, starting from M_p(0) = 0 and M_t(0) = P_t at the end of the build-up. Shuttering without zeroing starts from M_p(0) = P_p instead.",
+    eqs: c => [
+      ["M_p(t) = a_s e^{−t/τ_s} + a_l e^{−t/τ_l}", "eq. 3, pumping cell"],
+      ["M_t(t) = a_lt e^{−t/τ_l} − a_st e^{−t/τ_s}", "eq. 3, target cell"],
+      ["a_l = (Ṁ_p(0) + M_p(0)/τ_s) / (1/τ_s − 1/τ_l),   a_s = M_p(0) − a_l", "matching the value and slope at t = 0, with Ṁ(0) from eq. 2"],
+      ["a_lt = (Ṁ_t(0) + M_t(0)/τ_s) / (1/τ_s − 1/τ_l),   a_st = a_lt − M_t(0)", ""],
+      ["t_peak = ln[(−a_s/τ_s) / (a_l/τ_l)] / (1/τ_s − 1/τ_l)", "the zeroed pumping cell peaks where Ṁ_p = 0"],
+      ["M_p/M_t → a_l/a_lt", "once the short term has died out"]],
+    how: c => "a_l/a_lt is the slow mode of eq. 2, so it is the same whether or not the pumping cell is zeroed. Zeroing clears the pumping cell's own polarization, so what comes back is gas from the target.",
+    vals: c => {
+      const pp = R.paper, Z = pp.zeroed, Mt0 = pp.Mt0, pc = v => (v * 100).toFixed(2);
+      return [["M_t(0)", fxPct(Mt0)],
+        ["Ṁ_p(0) = (N_t/N) M_t(0)/t_ex", fxRate(pp.Nt_N / pp.t_ex * Mt0)],
+        ["Ṁ_t(0) = −(1/τ_t + (N_p/N)/t_ex) M_t(0)", fxRate(-(1 / pp.tau_t + pp.Np_N / pp.t_ex) * Mt0)],
+        ["a_s, a_l", pc(Z.a_s) + ", " + pc(Z.a_l) + "%"], ["a_st, a_lt", pc(Z.a_st) + ", " + pc(Z.a_lt) + "%"],
+        ["Peak M_p", fxPct(pp.P_peak) + " at " + fmtTime(pp.t_peak)], ["a_l/a_lt", pp.late_ratio.toFixed(3)]];
+    },
+    res: c => `M_p/M_t → ${R.paper.late_ratio.toFixed(3)}` },
+];
+const fxEls = FX.map((f, i) => {
+  const d = document.createElement("details");
+  d.innerHTML = `<summary><span class="n">${i + 1}</span><h3>${richHTML(f.title)}</h3><span class="res"></span></summary><div class="body"></div>`;
+  $("fx").appendChild(d);
+  return d;
+});
+{
+  let open = null;      // every step starts open until the viewer closes some
+  try { open = JSON.parse(localStorage.getItem("he3x-fx") || "null"); } catch (e) {}
+  fxEls.forEach((d, i) => { d.open = Array.isArray(open) ? open.includes(i) : true; });
+}
+function fxSync() {
+  $("fxAll").textContent = fxEls.every(d => d.open) ? "Close all" : "Open all";
+  try { localStorage.setItem("he3x-fx", JSON.stringify(fxEls.map((d, i) => d.open ? i : -1).filter(i => i >= 0))); } catch (e) {}
+}
+fxEls.forEach(d => d.addEventListener("toggle", fxSync));
+$("fxAll").addEventListener("click", () => { const open = !fxEls.every(d => d.open); fxEls.forEach(d => { d.open = open; }); fxSync(); });
+fxSync();
+function showFormulas() {
+  const c = fxContext();
+  FX.forEach((f, i) => {
+    const d = fxEls[i], how = f.how(c);
+    d.querySelector(".res").innerHTML = richHTML(f.res(c));
+    const body = d.querySelector(".body");
+    body.innerHTML = `<div><p class="where"><b>Applies to</b>${richHTML(f.where(c))}</p>` +
+      f.eqs(c).map(([e, n]) => `<div class="eq${n ? "" : " solo"}">${richHTML(e)}</div>` + (n ? `<div class="note">${richHTML(n)}</div>` : "")).join("") +
+      (how ? `<p class="how">${richHTML(how)}</p>` : "") +
+      `</div><div class="vals"><h4>With these settings</h4><dl class="facts"></dl></div>`;
+    fillFacts(body.querySelector("dl"), f.vals(c));
+  });
 }
 async function loadModelSource() {
   const inline = document.getElementById("model-py");
@@ -1780,16 +2013,6 @@ async function loadModelSource() {
   if (!r.ok) throw new Error("he3_model.py was not found next to the page");
   return await r.text();
 }
-$("copyCode").addEventListener("click", async () => {
-  const btn = $("copyCode");
-  try { await navigator.clipboard.writeText(MODEL_PY); btn.textContent = "Copied"; }
-  catch (e) {
-    const sel = window.getSelection(), range = document.createRange();
-    range.selectNodeContents(codeEl); sel.removeAllRanges(); sel.addRange(range);
-    btn.textContent = "Selected; press Ctrl+C";
-  }
-  setTimeout(() => { btn.textContent = "Copy"; }, 1800);
-});
 
 /* ---------------------------------------------------------------- boot */
 function loadScript(src) {
@@ -1803,12 +2026,11 @@ const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => se
 async function bootPython() {
   setEngine("loading", "Loading Python…");
   const errors = [];
-  try { MODEL_PY = await loadModelSource(); codeEl.innerHTML = highlight(MODEL_PY); }
+  try { MODEL_PY = await loadModelSource(); }
   catch (e) {
-    errors.push(e.message);
-    codeEl.textContent = location.protocol === "file:"
-      ? "Open this page through a web server (for example python3 -m http.server) so it can read he3_model.py."
-      : "Could not read he3_model.py: " + e.message;
+    errors.push(location.protocol === "file:"
+      ? "open this page through a web server (for example python3 -m http.server) so it can read he3_model.py"
+      : e.message);
   }
   if (!MODEL_PY) return fallBack(errors);
   try {
@@ -1854,15 +2076,17 @@ async function bootPython() {
 }
 function fallBack(errors) {
   setEngine("js", "JavaScript port", "Python could not start here: " + errors.join("; "));
-  $("srcStatus").textContent = "Python could not start here, so the page runs its JavaScript port of this model.";
+  $("srcStatus").textContent = "Python could not start here (" + errors.join("; ") + "), so the page runs its JavaScript port of this model.";
 }
 
 syncInputs();
 {
   let tab = "pol";
   try { tab = localStorage.getItem("he3x-tab") || "pol"; } catch (e) {}
-  if (location.hash === "#heat" || location.hash === "#polarization") tab = location.hash === "#heat" ? "heat" : "pol";
-  setTab(tab === "heat" ? "heat" : "pol");
+  const HASH_TAB = { "#polarization": "pol", "#heat": "heat", "#formulas": "fx" };
+  tab = HASH_TAB[location.hash] || tab;
+  setTab(TABS.includes(tab) ? tab : "pol");
+  window.addEventListener("hashchange", () => { if (HASH_TAB[location.hash]) setTab(HASH_TAB[location.hash]); });
 }
 previewJS(null);
 requestAnimationFrame(frame);
