@@ -24,6 +24,8 @@
   --bad: #B23A2E;
   --glass: rgba(120, 160, 180, 0.10);
   --metal: #D8DEE2;
+  /* heat-load categories (validated as a categorical set against --panel, light and dark) */
+  --h-cond: #008A6E; --h-engine: #B9531C; --h-rad: #6E56B8; --h-other: #7E8A1C;
   --font-display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   --font-body: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
@@ -33,12 +35,14 @@
     --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
     --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E;
     --glass: rgba(150, 190, 210, 0.07); --metal: #2A343B; color-scheme: dark;
+    --h-cond: #14A39A; --h-engine: #D9702E; --h-rad: #9580DD; --h-other: #949E22;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
   --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E;
   --glass: rgba(150, 190, 210, 0.07); --metal: #2A343B; color-scheme: dark;
+  --h-cond: #14A39A; --h-engine: #D9702E; --h-rad: #9580DD; --h-other: #949E22;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -190,6 +194,34 @@ table.amps th:first-child, table.amps td:first-child { text-align: left; padding
 table.amps td { text-align: right; padding: 3px 0 3px 10px; font: 13.5px var(--font-mono); font-variant-numeric: tabular-nums; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
 table.amps td:first-child { font-family: var(--font-body); color: var(--muted); }
 
+/* tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  font: 600 15px var(--font-display); border: 1px solid transparent; border-bottom: 0; background: transparent; color: var(--muted);
+  padding: 8px 16px; border-radius: 8px 8px 0 0; cursor: pointer; margin-bottom: -1px;
+}
+.tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); border-color: var(--line); }
+.tabs button:hover { color: var(--ink); }
+.panel-group { display: grid; gap: 18px; min-width: 0; }
+
+/* heat tab */
+.stage-card .tot { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.stage-card .tot .v { font: 500 26px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; }
+.stage-card .tot .s { font-size: 13px; color: var(--muted); }
+.sbar { display: flex; gap: 2px; height: 16px; border-radius: 4px; overflow: hidden; margin: 10px 0 4px; background: color-mix(in srgb, var(--line) 50%, transparent); }
+.sbar span { display: block; height: 100%; min-width: 0; }
+.sbar span:first-child { border-radius: 4px 0 0 4px; }
+.sbar span:last-child { border-radius: 0 4px 4px 0; }
+.sbar.over { outline: 2px solid var(--bad); outline-offset: 1px; }
+.scale { display: flex; justify-content: space-between; font: 11px var(--font-mono); color: var(--muted); }
+table.loads { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+table.loads td { padding: 4px 0; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); vertical-align: top; }
+table.loads td:last-child { text-align: right; font: 13.5px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 10px; }
+table.loads td i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
+table.loads td .d { display: block; color: var(--muted); font-size: 12.5px; margin-left: 17px; }
+table.loads tr.sum td { border-top: 1px solid var(--line); font-weight: 600; }
+.heat-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 10px; }
+
 /* source */
 details.src > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
 details.src > summary::-webkit-details-marker { display: none; }
@@ -261,10 +293,15 @@ details.src[open] > summary h2::before { content: "▾ "; }
       <fieldset id="fs-cells"><legend>Gas and cells</legend></fieldset>
       <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
       <fieldset id="fs-loop"><legend>Cold-end engine</legend></fieldset>
+      <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
       <fieldset id="fs-pump"><legend>Pumping (sealed-cell values) and relaxation</legend></fieldset>
     </aside>
 
     <main class="main">
+      <div class="tabs" role="tablist" aria-label="Views">
+        <button type="button" role="tab" id="tab-pol" data-tab="pol" aria-selected="true" aria-controls="pol-side pol-below">Polarization</button>
+        <button type="button" role="tab" id="tab-heat" data-tab="heat" aria-selected="false" aria-controls="heat-side heat-below">Heat loads</button>
+      </div>
       <div class="stage">
         <section class="card scene-wrap" aria-label="Cell schematic">
           <canvas id="scene" role="img" aria-label="Schematic of the pumping cell, transfer tubes and target cell"></canvas>
@@ -277,7 +314,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
           </div>
         </section>
 
-        <section class="readouts" aria-label="Results">
+        <section class="readouts" id="pol-side" role="tabpanel" aria-labelledby="tab-pol">
           <div class="kpis">
             <div class="kpi pump"><div class="k">Pumping cell</div><div class="v" id="kPp">–</div><div class="s" id="kPpS">steady state</div></div>
             <div class="kpi target"><div class="k">Target cell</div><div class="v" id="kPt">–</div><div class="s" id="kPtS">steady state</div></div>
@@ -295,17 +332,47 @@ details.src[open] > summary h2::before { content: "▾ "; }
             <div class="blegend" id="blegend"></div>
           </div>
 
-          <div class="card">
-            <div class="section-head"><h2>Heat</h2><span class="pill" id="hPill"></span></div>
-            <dl class="facts" id="hFacts"></dl>
-            <div class="meter" aria-hidden="true"><span id="hMeter"></span></div>
-            <p class="hint">Bar: 5 K stage load against the PT420 rating of 2.0 W at 4.2 K.</p>
-          </div>
+        </section>
 
-          <div class="warnings" id="warnings"></div>
+        <section class="readouts" id="heat-side" role="tabpanel" aria-labelledby="tab-heat" hidden>
+          <div class="card stage-card">
+            <div class="section-head"><h2 id="s2Head">Second stage</h2><span class="pill" id="s2Pill"></span></div>
+            <div class="tot"><span class="v" id="s2Tot">–</span><span class="s" id="s2Cap"></span></div>
+            <div class="sbar" id="s2Bar" role="img"></div><div class="scale" id="s2Scale"></div>
+            <table class="loads" id="s2Rows"></table>
+          </div>
+          <div class="card stage-card">
+            <div class="section-head"><h2 id="s1Head">First stage</h2><span class="pill" id="s1Pill"></span></div>
+            <div class="tot"><span class="v" id="s1Tot">–</span><span class="s" id="s1Cap"></span></div>
+            <div class="sbar" id="s1Bar" role="img"></div><div class="scale" id="s1Scale"></div>
+            <table class="loads" id="s1Rows"></table>
+          </div>
+          <div class="card">
+            <div class="section-head"><h2>Heaters and the warm end</h2></div>
+            <dl class="facts" id="hOther"></dl>
+            <p class="hint">These are not cooler loads. Heater power on a clamp flows along the tube, and the part that reaches the target is already counted in the second-stage conduction.</p>
+          </div>
         </section>
       </div>
 
+      <div class="warnings" id="warnings"></div>
+
+      <div class="panel-group" id="heat-below" role="tabpanel" aria-labelledby="tab-heat" hidden>
+        <section class="card" aria-label="Radiation, other loads and cooler capacity">
+          <div class="section-head"><h2>Radiation, other loads and cooler capacity</h2></div>
+          <div class="heat-inputs">
+            <fieldset id="fs-shield"><legend>First stage and radiation shield</legend></fieldset>
+            <fieldset id="fs-coldrad"><legend>Second stage, target and cold surfaces</legend></fieldset>
+            <fieldset id="fs-cooler"><legend>Cryocooler capacity</legend></fieldset>
+          </div>
+        </section>
+        <section class="card" aria-label="How the heat is assigned">
+          <div class="section-head"><h2>How the heat is assigned to each stage</h2></div>
+          <ul class="notes" id="heatNotes"></ul>
+        </section>
+      </div>
+
+      <div class="panel-group" id="pol-below" role="tabpanel" aria-labelledby="tab-pol">
       <section class="card" aria-label="Polarization versus time">
         <div class="chart-head">
           <h2>Polarization: build-up, then zero the pumping cell</h2>
@@ -341,6 +408,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
           </div>
         </div>
       </section>
+      </div>
 
       <section class="card">
         <details class="src" id="srcDetails">
@@ -353,7 +421,7 @@ details.src[open] > summary h2::before { content: "▾ "; }
           <ul class="notes">
             <li>This is the code that produced the numbers on this page. Its entry point <span class="mono">run(params_json)</span> takes the inputs as JSON and returns every result shown.</li>
             <li>The two-cell target concept is described in <a href="https://arxiv.org/abs/2106.06606">arXiv:2106.06606</a>; the pumping-cell probe and the rate-equation terms follow <a href="https://arxiv.org/abs/1412.6167">arXiv:1412.6167</a>.</li>
-            <li>Not modeled: radiation down the bore, relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
+            <li>Not modeled: radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The glass conductivity table and the cell volumes are approximate.</li>
           </ul>
         </details>
       </section>
@@ -432,9 +500,13 @@ const DEFAULTS = {
   mode: "loop", p_mbar: 100, Tc: 5, Th: 300,
   id_mm: 8, wall_mm: 1, length_cm: 10,
   engine_cm: 2, gap_cm: 0.5, T_engine: 25,
+  intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
   on_h: 24,
+  T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
+  A_cold_cm2: 300, eps_cold: 0.05, other2_mW: 0,
+  cap1_W: 55, cap2_W: 2,
 };
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
@@ -447,16 +519,28 @@ const DEFS = [
   { fs: "loop", key: "engine_cm", label: "Engine height", unit: "cm", min: 0.5, max: 8, dp: 1 },
   { fs: "loop", key: "T_engine", label: "Riser engine temperature", unit: "K", min: 4, max: 300, log: true, dp: 1 },
   { fs: "loop", key: "gap_cm", label: "Isolating gap below engine", unit: "cm", min: 0.1, max: 3, dp: 2 },
+  { fs: "int", key: "intercept", label: "Intercept on (first stage)", toggle: true },
+  { fs: "int", key: "T_int", label: "Intercept temperature", unit: "K", min: 15, max: 120, dp: 0 },
+  { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 39, dp: 1 },
   { fs: "pump", key: "M_ss", label: "Sealed-cell steady polarization M_ss", unit: "%", min: 5, max: 95, dp: 1 },
   { fs: "pump", key: "T_b_s", label: "Sealed-cell build-up time T_b", unit: "s", min: 5, max: 5000, log: true, dp: 0 },
   { fs: "pump", key: "T1t_h", label: "Target-cell T_1 (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
   { fs: "pump", key: "tau_p_s", label: "Pump-cell T_1, laser shuttered, discharge on (τ_p)", unit: "s", min: 10, max: 20000, log: true, dp: 0 },
   { fs: "pump", key: "on_h", label: "Pump for, then zero the pumping cell", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
+  { fs: "shield", key: "T_shield", label: "First-stage / shield temperature", unit: "K", min: 20, max: 120, dp: 0 },
+  { fs: "shield", key: "A_shield_m2", label: "Shield area facing 300 K", unit: "m²", min: 0.02, max: 5, log: true, dp: 3 },
+  { fs: "shield", key: "eps_shield", label: "Effective emissivity, 300 K → shield (MLI)", unit: "", min: 0.0005, max: 0.2, log: true, dp: 4 },
+  { fs: "shield", key: "other1_W", label: "Other first-stage loads (supports, wiring)", unit: "W", min: 0, max: 30, dp: 2 },
+  { fs: "coldrad", key: "A_cold_cm2", label: "Cold surface facing the shield (target cell, clamps)", unit: "cm²", min: 10, max: 5000, log: true, dp: 0 },
+  { fs: "coldrad", key: "eps_cold", label: "Effective emissivity, shield → cold surface", unit: "", min: 0.005, max: 1, log: true, dp: 3 },
+  { fs: "coldrad", key: "other2_mW", label: "Other second-stage loads (supports, wiring, NMR)", unit: "mW", min: 0, max: 2000, dp: 0 },
+  { fs: "cooler", key: "cap1_W", label: "First-stage capacity at the shield temperature", unit: "W", min: 1, max: 200, log: true, dp: 1 },
+  { fs: "cooler", key: "cap2_W", label: "Second-stage capacity at the target temperature", unit: "W", min: 0.1, max: 10, log: true, dp: 2 },
 ];
 const PRESETS = [
-  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10 } },
-  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, engine_cm: 2, gap_cm: 0.5, T_engine: 25 } },
-  { name: "Loop, engine off", p: { mode: "loop", T_engine: 5 } },
+  { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 10, intercept: false } },
+  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 10, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
+  { name: "Loop, engine off", p: { mode: "loop", T_engine: 5, intercept: false } },
   { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },
   { name: "Defaults", p: DEFAULTS },
 ];
@@ -479,7 +563,7 @@ DEFS.forEach(d => {
     lab.innerHTML = `<span>${richHTML(d.label)}</span><input type="checkbox" id="in-${d.key}">`;
     fs.appendChild(lab);
     const cb = lab.querySelector("input");
-    cb.addEventListener("change", () => { params[d.key] = cb.checked; changed(true); });
+    cb.addEventListener("change", () => { params[d.key] = cb.checked; syncInputs(); changed(true); });
     inputs[d.key] = { d, cb };
     return;
   }
@@ -511,6 +595,8 @@ function syncInputs() {
   $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
   $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
   $("fs-loop").hidden = params.mode !== "loop";
+  $("fs-int").querySelector("legend").textContent = params.mode === "loop" ? "Intercept on the downcomer" : "Intercept on the tube";
+  ["T_int", "s_int_cm"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.intercept; });
 }
 $("modeSingle").addEventListener("click", () => { params.mode = "single"; syncInputs(); changed(true); });
 $("modeLoop").addEventListener("click", () => { params.mode = "loop"; syncInputs(); changed(true); });
@@ -620,19 +706,7 @@ function show(res, source) {
   $("blegend").innerHTML = parts.map(p => `<div><span><i style="background:${p[2]}"></i>${p[0]}</span><span class="mono">${(Mss * p[1]).toFixed(1)}%</span></div>`).join("") +
     `<div><span style="color:var(--muted)">${richHTML("a = τ_x/T_{1t},  b = (N_t/N_p)·T_b/T_{1t};  P_t = M_ss/(1 + a + b)")}</span></div>`;
 
-  // heat
-  const h = R.heat_mW;
-  const hr = [["5 K stage (cell + cold clamps)", fmtmW(h.cold)]];
-  if (conv) hr.push(h.engine <= 0 ? ["Riser engine heater", fmtmW(-h.engine)] : [`Engine clamp removes, at ${params.T_engine} K`, fmtmW(h.engine)]);
-  hr.push(["Supplied at the warm end", fmtmW(-h.warm)]);
-  fillFacts($("hFacts"), hr);
-  const frac = h.cold / 2000;
-  const meter = $("hMeter");
-  meter.style.width = Math.min(100, Math.max(1, frac * 100)) + "%";
-  meter.style.background = frac > 1 ? css("--bad") : frac > 0.5 ? css("--warn") : css("--good");
-  const hp = $("hPill");
-  hp.className = "pill " + (frac > 1 ? "bad" : frac > 0.5 ? "warn" : "good");
-  hp.textContent = (frac * 100).toFixed(frac < 0.1 ? 1 : 0) + "% of PT420";
+  showHeat();
 
   $("sealedHint").innerHTML = richHTML(`Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`);
 
@@ -670,8 +744,9 @@ function show(res, source) {
     let d = Infinity;
     try {
       const js = computeJS();
-      const keys = ["G", "tau_x_target_s", "ss_pump", "ss_target", "mdot_mg_h"];
-      d = Math.max(...keys.map(k => Math.abs(R[k] - js[k]) / Math.max(Math.abs(R[k]), 1e-30)));
+      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total];
+      const a = pick(R), b = pick(js);
+      d = Math.max(...a.map((v, i) => Math.abs(v - b[i]) / Math.max(Math.abs(v), 1e-30)));
     } catch (e) {}
     jsAgrees = d < 1e-9;
     $("srcStatus").textContent = `Ran in Python, ${lastPyMs.toFixed(0)} ms · ` + (jsAgrees
@@ -682,6 +757,96 @@ function show(res, source) {
   schedulePreview(300);
   drawCharts();
 }
+/* ---------------------------------------------------------------- heat tab */
+const HCAT = { cond: ["--h-cond", "Conduction"], engine: ["--h-engine", "Engine clamp"], rad: ["--h-rad", "Radiation"], other: ["--h-other", "Other"] };
+function fmtP(w) {                      // a power in W, from microwatts to watts
+  const a = Math.abs(w), mW = w * 1e3;
+  if (a === 0) return "0";
+  if (a >= 10) return w.toFixed(1) + " W";
+  if (a >= 1) return w.toFixed(2) + " W";
+  if (a >= 1e-3) return mW.toFixed(Math.abs(mW) >= 10 ? 0 : 1) + " mW";
+  if (a >= 1e-5) return mW.toFixed(2) + " mW";
+  return (w * 1e6).toFixed(1) + " µW";
+}
+// [category, label, watts, detail] for each stage; shared by the page and the saved figure
+function stageRows() {
+  const S = R.stages, P = params, conv = P.mode === "loop", tubes = R.legs.length > 1 ? "both tubes" : "the tube";
+  const second = [["cond", "Conduction into the target cell and cold clamps", S.second.conduction,
+    `Glass and gas conduction down ${tubes}` + (conv ? ", plus the enthalpy the loop carries down" : "")]];
+  if (S.second.engine > 0) second.push(["engine", `Engine clamp at ${P.T_engine} K`, S.second.engine,
+    "The engine sits below the riser's natural temperature, so its clamp removes heat"]);
+  second.push(["rad", "Radiation from the shield", S.second.radiation, `${P.A_cold_cm2} cm², ε = ${P.eps_cold}, ${P.T_shield} K → ${P.Tc} K`]);
+  second.push(["rad", "Radiation down the tube bores", S.second.bore, `Direct line of sight from the ${P.Th} K end of ${tubes}`]);
+  second.push(["other", "Other second-stage loads", S.second.other, "Supports, wiring, NMR leads"]);
+  const first = [];
+  if (P.intercept) first.push(["cond", `Intercept at ${P.T_int} K`, S.first.intercept,
+    `Conduction down the warm part of the ${conv ? "downcomer" : "tube"}, removed ${P.s_int_cm} cm above the target`]);
+  first.push(["rad", "Radiation onto the shield", S.first.radiation, `${P.A_shield_m2} m², ε = ${P.eps_shield}, ${P.Th} K → ${P.T_shield} K`]);
+  first.push(["other", "Other first-stage loads", S.first.other, "Supports, wiring"]);
+  return { first, second };
+}
+function fillStage(id, name, st, rows) {
+  const frac = st.total / st.capacity, over = frac > 1, span = Math.max(st.total, st.capacity);
+  $(id + "Head").textContent = `${name} · ${st.T} K`;
+  $(id + "Tot").textContent = fmtP(st.total);
+  $(id + "Cap").textContent = `of ${fmtP(st.capacity)} capacity`;
+  const pill = $(id + "Pill");
+  pill.className = "pill " + (over ? "bad" : frac > 0.5 ? "warn" : "good");
+  pill.textContent = (over ? "Over capacity: " : "") + (100 * frac).toFixed(frac < 0.1 ? 1 : 0) + "% used";
+  const byCat = {};
+  rows.forEach(([c, , w]) => { byCat[c] = (byCat[c] || 0) + w; });
+  const bar = $(id + "Bar");
+  bar.classList.toggle("over", over);
+  bar.innerHTML = Object.keys(HCAT).filter(c => byCat[c] > 0).map(c =>
+    `<span style="flex:0 0 ${(100 * byCat[c] / span).toFixed(3)}%;background:var(${HCAT[c][0]})" title="${HCAT[c][1]}: ${fmtP(byCat[c])}"></span>`).join("");
+  bar.setAttribute("aria-label", `${name}: ${fmtP(st.total)} of ${fmtP(st.capacity)}. ` + Object.keys(HCAT).filter(c => byCat[c] > 0).map(c => `${HCAT[c][1]} ${fmtP(byCat[c])}`).join(", "));
+  $(id + "Scale").innerHTML = `<span>0</span><span>${over ? "load " + fmtP(span) + " · capacity " + fmtP(st.capacity) : fmtP(st.capacity)}</span>`;
+  $(id + "Rows").innerHTML = rows.map(([c, label, w, d]) =>
+    `<tr><td><i style="background:var(${HCAT[c][0]})"></i>${escHTML(label)}<span class="d">${richHTML(d)}</span></td><td>${fmtP(w)}</td></tr>`).join("") +
+    `<tr class="sum"><td>Total</td><td>${fmtP(st.total)}</td></tr>`;
+}
+function showHeat() {
+  const S = R.stages, P = params, rows = stageRows();
+  fillStage("s2", "Second stage", S.second, rows.second);
+  fillStage("s1", "First stage", S.first, rows.first);
+  const other = [];
+  if (P.mode === "loop") other.push(S.engine_heater > 0 ? [`Riser engine heater at ${P.T_engine} K`, fmtP(S.engine_heater)] : ["Riser engine heater", "none needed"]);
+  if (S.intercept_heater > 0) other.push([`Intercept heater at ${P.T_int} K`, fmtP(S.intercept_heater)]);
+  other.push(["Heat supplied at the warm end (pumping cell)", fmtP(S.warm_supply)]);
+  fillFacts($("hOther"), other);
+  const notes = [
+    `<b>Second stage, ${P.Tc} K.</b> The target cell and the cold clamp at the bottom of each tube take the heat conducted down the glass and gas` +
+      (P.mode === "loop" ? ", plus the enthalpy the convection loop carries down. An engine clamp that has to remove heat is counted here too, since only the second stage is cold enough to hold it at a few tens of kelvin; an engine that needs heat is listed with the heaters." : "."),
+    `<b>First stage, ${P.T_shield} K.</b> ` + (P.intercept
+      ? `The intercept removes the heat conducted down the warm part of its tube, so that heat never reaches the target. It is assumed to be tied to the first stage.`
+      : "With the intercept off, the first stage carries only the shield's radiation and the other loads you enter."),
+    "<b>Radiation</b> is " + richHTML("σεA(T_{hot}^{4} − T_{cold}^{4}) with an effective emissivity for each pair of surfaces. Multilayer insulation between 300 K and the shield typically passes 0.5–1.5 W/m², an effective emissivity of about 0.001–0.003; bare polished metal at the second stage is nearer 0.02–0.05."),
+    "<b>Radiation down the bores</b> counts only the direct line of sight from the warm end of each tube to the target, treated as two coaxial disks the size of the bore, separated by the tube length. Radiation absorbed and re-emitted by the glass walls is not modeled; glass is nearly opaque in the thermal infrared, so the walls intercept most of it.",
+    "<b>Cooler capacity</b> defaults to the Cryomech PT420 rating of 2.0 W at 4.2 K with 55 W at 45 K. Read your cooler's capacity map at the actual stage temperatures: the second-stage capacity rises steeply above 4.2 K.",
+  ];
+  if (P.intercept && P.T_int < P.T_shield) notes.unshift(`<span style="color:var(--bad)">The intercept (${P.T_int} K) is colder than the first stage (${P.T_shield} K), so the first stage cannot hold it there. Raise the intercept temperature or count it on the second stage.</span>`);
+  $("heatNotes").innerHTML = notes.map(n => `<li>${n}</li>`).join("");
+}
+
+/* ---------------------------------------------------------------- tabs */
+function setTab(tab, focus) {
+  document.querySelectorAll(".tabs [role=tab]").forEach(b => {
+    const on = b.dataset.tab === tab;
+    b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+  });
+  ["pol-side", "pol-below"].forEach(id => { $(id).hidden = tab !== "pol"; });
+  ["heat-side", "heat-below"].forEach(id => { $(id).hidden = tab !== "heat"; });
+  try { localStorage.setItem("he3x-tab", tab); } catch (e) {}
+  if (tab === "pol") drawCharts();      // the chart canvases had no size while hidden
+}
+document.querySelectorAll(".tabs [role=tab]").forEach(b => {
+  b.addEventListener("click", () => setTab(b.dataset.tab));
+  b.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") setTab(b.dataset.tab === "pol" ? "heat" : "pol", true);
+  });
+});
+
 function fillFacts(dl, rows) {
   dl.innerHTML = "";
   rows.forEach(([k, v]) => {
@@ -832,6 +997,9 @@ function drawScene(dtSec, out) {   // out = { ctx, W, H, spins } draws a still f
         for (let k = 0; k <= n; k++) { const yy = yA - (yA - yB) * k / n, xx = x + (k % 2 ? 1 : -1) * (tw / 2 + 6); k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy); }
         ctx.stroke();
         label(ctx, x + side * (tw / 2 + 12), (yA + yB) / 2, `engine ${Tn} K`, side, col);
+      } else if (kind === "intercept") {
+        ctx.fillStyle = col.ink; ctx.fillRect(x - tw / 2 - 8, yA - 2.5, tw + 16, 5);
+        label(ctx, x + side * (tw / 2 + 12), yA, `${Tn} K intercept`, side, col);
       }
       s0 += cl + (ni < leg.free_cm.length ? leg.free_cm[ni] : 0);
     });
@@ -1041,23 +1209,22 @@ function settingsGroups() {
   const g = [["Configuration", [
     ["Gas exchange", params.mode === "loop" ? "Convection loop, two tubes" : "Single tube"],
     ["Pumping cell temperature", params.Th + " K"]]]];
-  ["cells", "tubes", "loop", "pump"].forEach(fs => {
+  ["cells", "tubes", "loop", "int", "pump", "shield", "coldrad", "cooler"].forEach(fs => {
     if (fs === "loop" && params.mode !== "loop") return;
-    const rows = DEFS.filter(d => d.fs === fs)
+    const rows = DEFS.filter(d => d.fs === fs && (d.toggle || fs !== "int" || params.intercept))
       .map(d => [d.label, d.toggle ? (params[d.key] ? "on" : "off") : roundTo(params[d.key], d.dp) + (d.unit ? " " + d.unit : "")]);
     g.push([$("fs-" + fs).querySelector("legend").textContent, rows]);
   });
   return g;
 }
 function resultGroups() {
-  const conv = params.mode === "loop", h = R.heat_mW, pp = R.paper;
+  const conv = params.mode === "loop", pp = R.paper, S = R.stages, sr = stageRows();
   const ex = [["Target exchange time N_t/G", fmtTime(R.tau_x_target_s)], ["Conductance G", fmtSci(R.G) + " /s"]];
   if (conv) ex.push(["  by circulation", fmtSci(R.G_conv) + " /s"],
     ["Loop flow", (R.mdot_mg_h >= 100 ? R.mdot_mg_h.toFixed(0) : R.mdot_mg_h.toFixed(1)) + " mg/h"],
     ["Reynolds number, cold end", R.Re.toFixed(1)]);
-  const heat = [["Cold stage (target cell and clamps)", fmtmW(h.cold)]];
-  if (conv) heat.push(h.engine <= 0 ? ["Riser engine heater", fmtmW(-h.engine)] : [`Engine clamp at ${params.T_engine} K removes`, fmtmW(h.engine)]);
-  heat.push(["Supplied at the warm end", fmtmW(-h.warm)]);
+  const stage = (st, rows) => rows.map(([, label, w]) => ["  " + label, fmtP(w)])
+    .concat([["Total, of " + fmtP(st.capacity) + " capacity", fmtP(st.total) + " (" + (100 * st.total / st.capacity).toFixed(1) + "%)"]]);
   return [
     ["Steady state, laser and discharge on", [
       ["Pumping cell", fmtPct(R.ss_pump)],
@@ -1065,7 +1232,8 @@ function resultGroups() {
       ["Target reaches 90% in", fmtTime(R.t90_target_s)],
       ["P_t = M_ss/(1+a+b)", `a = ${R.loss_exchange.toPrecision(2)}, b = ${R.loss_capacity.toPrecision(2)}`]]],
     ["Gas exchange", ex],
-    ["Heat", heat],
+    [`Second-stage heat, ${S.second.T} K`, stage(S.second, sr.second)],
+    [`First-stage heat, ${S.first.T} K`, stage(S.first, sr.first)],
     ["Pumping-cell probe after zeroing", [
       ["Exchange time t_ex", fmtTime(pp.t_ex)],
       ["Decay constants τ_s, τ_l", fmtTime(pp.tau_s) + ", " + fmtTime(pp.tau_l)],
@@ -1275,6 +1443,8 @@ function resultSummary() {
     loop_flow_mg_per_h: r6(R.mdot_mg_h), reynolds_cold_end: r6(R.Re), N_pump: r6(R.Np), N_target: r6(R.Nt),
     a_exchange: r6(R.loss_exchange), b_capacity: r6(R.loss_capacity),
     heat_mW: r6o(R.heat_mW),
+    stages_W: { first: r6o(R.stages.first), second: r6o(R.stages.second),
+      intercept_heater: r6(R.stages.intercept_heater), engine_heater: r6(R.stages.engine_heater), warm_supply: r6(R.stages.warm_supply) },
     probe: {
       t_ex_s: r6(pp.t_ex), tau_s_s: r6(pp.tau_s), tau_l_s: r6(pp.tau_l), P_peak: r6(pp.P_peak), t_peak_s: r6(pp.t_peak),
       late_ratio: r6(pp.late_ratio), zeroed: r6o(pp.zeroed), shuttered: r6o(pp.shuttered),
@@ -1491,6 +1661,12 @@ function fallBack(errors) {
 }
 
 syncInputs();
+{
+  let tab = "pol";
+  try { tab = localStorage.getItem("he3x-tab") || "pol"; } catch (e) {}
+  if (location.hash === "#heat" || location.hash === "#polarization") tab = location.hash === "#heat" ? "heat" : "pol";
+  setTab(tab === "heat" ? "heat" : "pol");
+}
 previewJS(null);
 requestAnimationFrame(frame);
 bootPython();

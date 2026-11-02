@@ -9,13 +9,18 @@ Transport (per leg, 1-D along the tube):
   * glass wall + gas conduction, plus the enthalpy carried by any net flow.
     In each free (unclamped) section the energy flux F = -K dT/ds + mdot*cp*T is
     constant, so ds/dT = K(T) / (mdot*cp*T - F); F is found by Newton iteration.
-  * clamped sections (cell ends, cold-end "engine") are isothermal;
+  * clamped sections (cell ends, cold-end "engine", intercepts) are isothermal;
     the heat each clamp removes is the jump in F across it.
   * diffusion of polarization at uniform pressure: G = A / int ds/(n D);
     n*D = 1.32 eta(T)/m is independent of pressure.
   * thermosiphon (loop mode): buoyancy g*(int rho ds)_down - (int rho ds)_up
     balanced by Poiseuille friction 128 nu mdot / (pi d^4), with the tube
     temperature profiles re-solved for each trial flow.
+
+Cooler stages (stage_loads): the intercept, 300 K radiation onto the shield and other
+loads go to the first stage; the cold clamps and target cell, an engine clamp that
+removes heat, shield radiation onto the cold surfaces, direct radiation down the
+bores and other loads go to the second stage. Radiation is sigma eps A (Th^4 - Tc^4).
 
 Polarization (exact solution of the linear 2x2 system, piecewise in time):
   dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          laser and discharge on
@@ -51,6 +56,7 @@ M_ATOM = M3 / NA                # kg/atom
 RG = 8.314462
 CP = 2.5 * RG / M3              # J/kg/K, monatomic ideal gas
 GRAV = 9.81
+SIGMA = 5.670374419e-8          # W/m^2/K^4
 
 # ------------------------------------------------------------------ 3He gas
 ETA_300 = 17.2e-6               # Pa s at 300 K (4He value * sqrt(3/4))
@@ -327,9 +333,17 @@ def build_legs(P):
     cm = 0.01
     Tc, Th = P["Tc"], P["Th"]
     H = P["length_cm"] * cm
+    use_int = P["intercept"] and P["mode"] in ("single", "loop")
+    Ti, si = P["T_int"], P["s_int_cm"] * cm
     errs = []
 
     def cold_leg(clamp):
+        if use_int:
+            if not (clamp + 0.2 * cm < si < H - 0.2 * cm):
+                errs.append("Intercept height must sit between the cold clamp and the pumping cell.")
+                return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
+            return dict(nodes=[(Tc, clamp, "cold"), (Ti, 0.0, "intercept"), (Th, 0.0, "warm")],
+                        free=[si - clamp, H - si])
         return dict(nodes=[(Tc, clamp, "cold"), (Th, 0.0, "warm")], free=[H - clamp])
 
     if P["mode"] == "single":
@@ -431,6 +445,35 @@ def relax_curves(sys2, amp, t):
     return Mp, Mt
 
 
+# ------------------------------------------------------------------ cooler stages
+def disk_view(r, L):
+    """View factor between two equal coaxial disks of radius r a distance L apart:
+    the direct line of sight from a tube's warm end to its cold end."""
+    R = r / L
+    X = 2.0 + 1.0 / (R * R)
+    return 2.0 / (X + math.sqrt(X * X - 4.0))     # = (X - sqrt(X^2 - 4))/2, without the cancellation
+
+
+def stage_loads(P, heat, tube, n_legs):
+    """Split the heat into the two cooler stages [W].
+    First stage (T_shield): the intercept clamp, 300 K radiation onto the shield, other loads.
+    Second stage (Tc): the cold clamps and target cell, an engine clamp that removes heat,
+    shield radiation onto the cold surfaces, direct radiation down the tube bores, other loads.
+    A clamp that has to be heated (negative heat) is reported as a heater, not a cooler load."""
+    Th, Tc, T1 = P["Th"], P["Tc"], P["T_shield"]
+    q_int, q_eng = heat["intercept"], heat["engine"]
+    rad1 = SIGMA * P["eps_shield"] * P["A_shield_m2"] * (Th ** 4 - T1 ** 4)
+    rad2 = SIGMA * P["eps_cold"] * P["A_cold_cm2"] * 1e-4 * (T1 ** 4 - Tc ** 4)
+    bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2.0, P["length_cm"] * 0.01) * (Th ** 4 - Tc ** 4)
+    first = dict(T=T1, intercept=max(0.0, q_int), radiation=rad1, other=P["other1_W"], capacity=P["cap1_W"])
+    first["total"] = first["intercept"] + rad1 + first["other"]
+    second = dict(T=Tc, conduction=heat["cold"], engine=max(0.0, q_eng), radiation=rad2, bore=bore,
+                  other=P["other2_mW"] * 1e-3, capacity=P["cap2_W"])
+    second["total"] = second["conduction"] + second["engine"] + rad2 + bore + second["other"]
+    return dict(first=first, second=second,
+                intercept_heater=max(0.0, -q_int), engine_heater=max(0.0, -q_eng), warm_supply=-heat["warm"])
+
+
 # ------------------------------------------------------------------ entry
 def compute(P):
     p = P["p_mbar"] * 100.0
@@ -454,10 +497,11 @@ def compute(P):
     Np = n_num(Th, p) * P["V_pump_cc"] * 1e-6
     Nt = n_num(Tc, p) * P["V_target_cc"] * 1e-6
 
-    heat = dict(cold=0.0, engine=0.0, warm=0.0)
+    heat = dict(cold=0.0, intercept=0.0, engine=0.0, warm=0.0)
     for s in sol:
         for kind, Tn, q in s["heats"]:
             heat[kind] += q
+    stages = stage_loads(P, heat, tube, len(legs))
 
     Mss = P["M_ss"] / 100.0
     g_b = 1.0 / P["T_b_s"]
@@ -510,8 +554,9 @@ def compute(P):
     Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
     if Re > 50:
         warnings.append("Reynolds number %.0f at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow." % Re)
-    if heat["cold"] > 2.0:
-        warnings.append("Cold-stage load exceeds the PT420 rating of about 2 W at 4.2 K.")
+    for name, stage in (("Second-stage", stages["second"]), ("First-stage", stages["first"])):
+        if stage["total"] > stage["capacity"]:
+            warnings.append("%s load of %.3g W exceeds the cooler's %.3g W at that stage." % (name, stage["total"], stage["capacity"]))
     if any(s["clamped"] for s in sol):
         warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
 
@@ -524,6 +569,7 @@ def compute(P):
         Np=Np, Nt=Nt, N_tubes=sum(s["N_tube"] for s in sol),
         tau_x_target_s=Nt / G, tau_x_pump_s=Np / G,
         heat_mW={k: v * 1e3 for k, v in heat.items()},
+        stages=stages,
         legs=[dict(profile=s["profile"], length_cm=s["length"] * 100,
                    nodes=[[n[0], n[1] * 100, n[2]] for n in leg["nodes"]],
                    free_cm=[f * 100 for f in leg["free"]],
@@ -552,9 +598,13 @@ DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
     id_mm=8.0, wall_mm=1.0, length_cm=10.0,
     engine_cm=2.0, gap_cm=0.5, T_engine=25.0,
+    intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
     on_h=24.0,
+    T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,
+    A_cold_cm2=300.0, eps_cold=0.05, other2_mW=0.0,
+    cap1_W=55.0, cap2_W=2.0,
 )
 
 if __name__ == "__main__" and __import__("sys").platform != "emscripten":
@@ -567,3 +617,4 @@ if __name__ == "__main__" and __import__("sys").platform != "emscripten":
               {k: r[k] for k in ("mdot_mg_h", "Re", "G", "G_diff", "tau_x_target_s", "ss_pump", "ss_target",
                                   "times_s", "t90_target_s", "heat_mW", "warnings")})
         print("  paper", {k: v for k, v in r["paper"].items()})
+        print("  stages", r["stages"])

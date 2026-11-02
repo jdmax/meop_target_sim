@@ -3,7 +3,7 @@
 (function (root) {
   "use strict";
   const KB = 1.380649e-23, NA = 6.02214076e23, M3 = 3.01603e-3, M_ATOM = M3 / NA;
-  const RG = 8.314462, CP = 2.5 * RG / M3, GRAV = 9.81;
+  const RG = 8.314462, CP = 2.5 * RG / M3, GRAV = 9.81, SIGMA = 5.670374419e-8;
   const ETA_300 = 17.2e-6, ETA_EXP = 0.68, RHO_D_OVER_ETA = 1.32;
   const eta = T => ETA_300 * Math.pow(T / 300, ETA_EXP);
   const k_gas = T => 3.75 * RG / M3 * eta(T);
@@ -156,8 +156,16 @@
 
   function build_legs(P) {
     const cm = 0.01, Tc = P.Tc, Th = P.Th, H = P.length_cm * cm;
-    const errs = [];
+    const useInt = P.intercept && (P.mode === "single" || P.mode === "loop");
+    const Ti = P.T_int, si = P.s_int_cm * cm, errs = [];
     function cold_leg(clamp) {
+      if (useInt) {
+        if (!(clamp + 0.2 * cm < si && si < H - 0.2 * cm)) {
+          errs.push("Intercept height must sit between the cold clamp and the pumping cell.");
+          return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
+        }
+        return { nodes: [[Tc, clamp, "cold"], [Ti, 0, "intercept"], [Th, 0, "warm"]], free: [si - clamp, H - si] };
+      }
       return { nodes: [[Tc, clamp, "cold"], [Th, 0, "warm"]], free: [H - clamp] };
     }
     if (P.mode === "single") return [[cold_leg(0)], errs];
@@ -226,6 +234,22 @@
             t.map(x => amp.a_lt * Math.exp(-rl * x) - amp.a_st * Math.exp(-rs * x))];
   }
 
+  function disk_view(r, L) {
+    const R = r / L, X = 2 + 1 / (R * R);
+    return 2 / (X + Math.sqrt(X * X - 4));
+  }
+  function stage_loads(P, heat, tube, n_legs) {
+    const Th = P.Th, Tc = P.Tc, T1 = P.T_shield, q_int = heat.intercept, q_eng = heat.engine;
+    const rad1 = SIGMA * P.eps_shield * P.A_shield_m2 * (Th ** 4 - T1 ** 4);
+    const rad2 = SIGMA * P.eps_cold * P.A_cold_cm2 * 1e-4 * (T1 ** 4 - Tc ** 4);
+    const bore = n_legs * SIGMA * tube.A_gas * disk_view(tube.d / 2, P.length_cm * 0.01) * (Th ** 4 - Tc ** 4);
+    const first = { T: T1, intercept: Math.max(0, q_int), radiation: rad1, other: P.other1_W, capacity: P.cap1_W };
+    first.total = first.intercept + rad1 + first.other;
+    const second = { T: Tc, conduction: heat.cold, engine: Math.max(0, q_eng), radiation: rad2, bore, other: P.other2_mW * 1e-3, capacity: P.cap2_W };
+    second.total = second.conduction + second.engine + rad2 + bore + second.other;
+    return { first, second, intercept_heater: Math.max(0, -q_int), engine_heater: Math.max(0, -q_eng), warm_supply: -heat.warm };
+  }
+
   function compute(P) {
     const p = P.p_mbar * 100, Tc = P.Tc, Th = P.Th, tube = Tube(P.id_mm * 1e-3, P.wall_mm * 1e-3);
     const [legs, errs] = build_legs(P);
@@ -233,8 +257,9 @@
     const sol = legs.map((leg, i) => solve_leg(leg, tube, p, i === 0 ? mdot : -mdot, true));
     const G_diff = sol.reduce((s, x) => s + 1 / x.R_diff, 0), G_conv = Math.abs(mdot) / M_ATOM, G = G_diff + G_conv;
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
-    const heat = { cold: 0, engine: 0, warm: 0 };
+    const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
+    const stages = stage_loads(P, heat, tube, legs.length);
     const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
     const kp = G / Np, kt = G / Nt;
     const A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]];
@@ -261,12 +286,15 @@
       P_peak: a_s * Math.exp(-rs * t_peak) + a_l * Math.exp(-rl * t_peak), late_ratio: a_l / amp_zero.a_lt });
     const warnings = errs.slice(), Re = 4 * Math.abs(mdot) / (Math.PI * tube.d * eta(Tc));
     if (Re > 50) warnings.push(`Reynolds number ${Re.toFixed(0)} at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow.`);
-    if (heat.cold > 2.0) warnings.push("Cold-stage load exceeds the PT420 rating of about 2 W at 4.2 K.");
+    const g3 = v => String(+v.toPrecision(3));
+    [["Second-stage", stages.second], ["First-stage", stages.first]].forEach(([name, st]) => {
+      if (st.total > st.capacity) warnings.push(`${name} load of ${g3(st.total)} W exceeds the cooler's ${g3(st.capacity)} W at that stage.`);
+    });
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
-      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])),
+      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages,
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
       production_atoms_s: g_b * Mss * Np,
