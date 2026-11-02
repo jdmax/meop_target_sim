@@ -29,6 +29,10 @@ The **Formulas** tab lays these out as eleven steps in the order the model runs 
 
 **Not modeled:** the temperature drop between the second stage and the target cell, radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
 
+## Transfer tube joint stress
+
+A separate page, **<https://jdmax.github.io/meop_target_sim/glass_joint/>**, models the thermal stress in the borosilicate transfer tube where it is bonded into the aluminum target cell, from 292 K down to 2 K. It compares a solid aluminum collar with the planned 1100-O feather seal and checks the glass against fracture. The model and how to rerun it are described in [glass_joint/README.md](glass_joint/README.md).
+
 ## Saving figures, settings and data
 
 **Save / load** at the top of the page opens a panel with a title and notes field, a live preview, and four actions:
@@ -49,7 +53,8 @@ The **Formulas** tab lays these out as eleven steps in the order the model runs 
 | `index.html` | The page: controls, schematic, the Polarization, Heat loads and Formulas tabs |
 | `he3_model.py` | The model. The page fetches this file and runs it in Pyodide |
 | `he3_model.js` | Line-for-line JavaScript port, used for instant previews while a slider is dragged and as a fallback if Python can't start |
-| `.github/workflows/pages.yml` | Deploys the three site files to GitHub Pages on each push to `main` |
+| `glass_joint/` | Transfer-tube joint stress analysis: finite-element model, results and its page (`glass_joint/index.html`) |
+| `.github/workflows/pages.yml` | Deploys the simulator files and the joint-stress page to GitHub Pages on each push to `main` |
 
 ## Editing the model
 
