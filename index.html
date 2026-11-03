@@ -112,6 +112,8 @@ legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter
 .row input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 14px; }
 .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.choice { display: grid; gap: 6px; padding: 4px 0 6px; font-size: 14px; }
+.choice .seg button { font-size: 13.5px; padding: 6px; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
 
 /* stage */
@@ -322,6 +324,7 @@ footer.site a { color: var(--accent); }
       <fieldset id="fs-loop"><legend>Riser engine</legend></fieldset>
       <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
       <fieldset id="fs-pump"><legend>Pumping (sealed-cell values) and relaxation</legend></fieldset>
+      <fieldset id="fs-scale"><legend>Pumping cell against the sealed cell</legend></fieldset>
     </aside>
 
     <main class="main">
@@ -564,11 +567,15 @@ const DEFAULTS = {
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
+  pump_scaling: "flux", V_seal_cc: 49, s_light: 1, s_dis: 1, T1_dark_on: false, T1_dark_h: 10,
+  Pabs_on: false, Pabs_seal_mW: 200, Pabs_mW: 200,
   on_h: 24,
   T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
   A_cold_cm2: 300, eps_cold: 0.05, other2_mW: 0,
   cooler_map: true, cooler_pct: 100,
 };
+// the pumping-cell scaling: rows that only flux mode uses, and those the absorbed-power helper sets or uses
+const FLUX_KEYS = ["V_seal_cc", "s_light", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW", "T1_dark_on", "T1_dark_h"];
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
@@ -590,6 +597,15 @@ const DEFS = [
   { fs: "pump", key: "T1t_h", label: "Target-cell T_1 (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
   { fs: "pump", key: "tau_p_s", label: "Pump-cell T_1, laser shuttered, discharge on (τ_p)", unit: "s", min: 10, max: 20000, log: true, dp: 0 },
   { fs: "pump", key: "on_h", label: "Pump for, then zero the pumping cell", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
+  { fs: "scale", key: "pump_scaling", label: "Pumping scales with", choice: [["flux", "Absorbed light"], ["volume", "Cell volume"]] },
+  { fs: "scale", key: "V_seal_cc", label: "Sealed-cell volume (where M_ss, T_b were measured)", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
+  { fs: "scale", key: "s_light", label: "Absorbed photon flux, relative to the sealed cell", unit: "×", min: 0.1, max: 10, log: true, dp: 2 },
+  { fs: "scale", key: "s_dis", label: "Discharge volume, relative to the sealed cell", unit: "×", min: 0.1, max: 10, log: true, dp: 2 },
+  { fs: "scale", key: "Pabs_on", label: "Photon flux from the absorbed pump power", toggle: true },
+  { fs: "scale", key: "Pabs_seal_mW", label: "Absorbed power, sealed cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
+  { fs: "scale", key: "Pabs_mW", label: "Absorbed power, pumping cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
+  { fs: "scale", key: "T1_dark_on", label: "Gas outside the discharge relaxes", toggle: true },
+  { fs: "scale", key: "T1_dark_h", label: "T_1 outside the discharge (T_{1,dark})", unit: "h", min: 0.05, max: 1000, log: true, dp: 2 },
   { fs: "shield", key: "T_shield", label: "First-stage / shield temperature", unit: "K", min: 20, max: 120, dp: 0 },
   { fs: "shield", key: "A_shield_m2", label: "Shield area facing 300 K", unit: "m²", min: 0.02, max: 5, log: true, dp: 3 },
   { fs: "shield", key: "eps_shield", label: "Effective emissivity, 300 K → shield (MLI)", unit: "", min: 0.0005, max: 0.2, log: true, dp: 4 },
@@ -621,6 +637,17 @@ const roundTo = (v, dp) => { const f = Math.pow(10, dp); return Math.round(v * f
 
 DEFS.forEach(d => {
   const fs = $("fs-" + d.fs);
+  if (d.choice) {
+    const row = document.createElement("div");
+    row.className = "choice";
+    row.innerHTML = `<span>${richHTML(d.label)}</span><div class="seg" role="group" aria-label="${escHTML(plainText(d.label))}">` +
+      d.choice.map(([v, t]) => `<button type="button" data-v="${v}">${escHTML(t)}</button>`).join("") + "</div>";
+    fs.appendChild(row);
+    const btns = [...row.querySelectorAll("button")];
+    btns.forEach(b => b.addEventListener("click", () => { params[d.key] = b.dataset.v; syncInputs(); changed(true); }));
+    inputs[d.key] = { d, btns };
+    return;
+  }
   if (d.toggle) {
     const lab = document.createElement("label");
     lab.className = "toggle";
@@ -649,6 +676,7 @@ DEFS.forEach(d => {
   inputs[d.key] = { d, num, rng };
 });
 $("fs-pump").insertAdjacentHTML("beforeend", '<p class="hint" id="sealedHint"></p>');
+$("fs-scale").insertAdjacentHTML("beforeend", '<p class="hint" id="scaleHint"></p>');
 $("fs-cells").insertAdjacentHTML("beforeend", '<p class="hint" id="tcHint"></p>');
 $("fs-loop").insertAdjacentHTML("beforeend", '<p class="hint" id="engineHint"></p>');
 $("fs-shield").insertAdjacentHTML("beforeend", '<p class="hint" id="shieldHint"></p>');
@@ -659,8 +687,14 @@ function syncInputs() {
   for (const k in inputs) {
     const it = inputs[k];
     if (it.cb) it.cb.checked = !!params[k];
+    else if (it.btns) it.btns.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === params[k])));
     else { it.num.value = params[k]; it.rng.value = toSlider(it.d, params[k]); }
   }
+  const flux = params.pump_scaling === "flux";
+  FLUX_KEYS.forEach(k => { const it = inputs[k]; (it.cb ? it.cb.closest(".toggle") : it.num.closest(".row")).hidden = !flux; });
+  ["Pabs_seal_mW", "Pabs_mW"].forEach(k => { inputs[k].num.closest(".row").hidden = !flux || !params.Pabs_on; });
+  inputs.s_light.num.disabled = inputs.s_light.rng.disabled = !!params.Pabs_on;     // the absorbed powers set it
+  inputs.T1_dark_h.num.disabled = inputs.T1_dark_h.rng.disabled = !params.T1_dark_on;
   $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
   $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
   $("fs-loop").hidden = params.mode !== "loop";
@@ -781,7 +815,7 @@ function show(res, source) {
   else { xp.className = "pill bad"; xp.textContent = "Exchange-limited"; }
 
   // steady state: Pt = Mss / (1 + a + b); split M_ss into what the target keeps and what each limit costs
-  const a = R.loss_exchange, b = R.loss_capacity, den = 1 + a + b, Mss = params.M_ss;
+  const a = R.loss_exchange, b = R.loss_capacity, den = 1 + a + b, Mss = 100 * R.pump_eff.M_ss_eff;
   const parts = [
     ["Reached in the target", 1 / den, css("--cold")],
     [`MEOP can't keep up with target relaxation (b = ${b.toPrecision(2)})`, b / den, css("--warm")],
@@ -789,14 +823,24 @@ function show(res, source) {
   ];
   $("budget").innerHTML = parts.map(p => `<span style="width:${(100 * p[1]).toFixed(2)}%;background:${p[2]}" title="${p[0]}"></span>`).join("");
   $("blegend").innerHTML = parts.map(p => `<div><span><i style="background:${p[2]}"></i>${p[0]}</span><span class="mono">${(Mss * p[1]).toFixed(1)}%</span></div>`).join("") +
-    `<div><span style="color:var(--muted)">${richHTML("a = τ_x/T_{1t},  b = (N_t/N_p)·T_b/T_{1t};  P_t = M_ss/(1 + a + b)")}</span></div>`;
+    `<div><span style="color:var(--muted)">${richHTML("a = τ_x/T_{1t},  b = N_t·M_ss′/(Q_0′·T_{1t});  P_t = M_ss′/(1 + a + b)")}</span></div>`;
 
   showHeat();
   showLag();
   showFormulas();
   engineHint();
 
-  $("sealedHint").innerHTML = richHTML(`Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s. τ_p is the pumping-cell relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell.`);
+  const pe = R.pump_eff;
+  $("sealedHint").innerHTML = richHTML("Fit M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field. τ_p is the relaxation with the discharge on and the laser shuttered, as while the polarimeter watches the cell. " + (pe.mode === "flux"
+    ? `In this pumping cell: production Q_0′ = ${fmtSci(pe.Q0p)} atoms/s, T_b′ = ${fmtTime(pe.T_b_eff)}, M_ss′ = ${fxPct(pe.M_ss_eff)}, τ_p′ = ${fmtTime(pe.T1p_eff)}.`
+    : `Initial production in this pumping cell: N_p·M_ss/T_b = ${fmtSci(R.production_atoms_s)} atoms/s.`));
+  $("scaleHint").innerHTML = pe.mode === "flux"
+    ? richHTML(`The fit is read as fluxes, which the discharge and the light it absorbs set: Q_0 = N_s·M_ss/T_b = ${fmtSci(pe.Q0)} atoms/s with N_s = ${fmtSci(pe.Ns)} sealed-cell atoms, scaled by s_light` +
+        (params.Pabs_on ? ` = P_abs/P_{abs,seal} = ${pe.s_light.toPrecision(3)}` : "") + ". " +
+        (pe.eta != null ? `Photon efficiency η = Q_0/(P_{abs,seal}/hν) = ${pe.eta.toPrecision(3)} polarized atoms per absorbed photon, at most 2. ` : "") +
+        (params.T1_dark_on ? "Gas outside the discharge relaxes too, so a bigger pumping cell lowers the steady state."
+          : "The rest of the pumping cell only shares polarization by diffusion, so its size sets the build-up time but not the steady state."))
+    : "The fit is taken as rates, so production grows with the pumping-cell volume, as in settings saved before this choice. With the discharge in a thin layer at the walls, the absorbed light sets production instead.";
 
   // pumping-cell probe, in the terms of arXiv:1412.6167
   const pp = R.paper, Z = pp.zeroed, S = pp.shuttered;
@@ -832,7 +876,8 @@ function show(res, source) {
     let d = Infinity;
     try {
       const js = computeJS();
-      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim];
+      const pick = o => [o.G, o.tau_x_target_s, o.ss_pump, o.ss_target, o.mdot_mg_h, o.stages.first.total, o.stages.second.total, o.Tc, o.T_shield, o.T_engine, o.cooler.trim,
+        o.production_atoms_s, o.loss_capacity, o.pump_eff.T1p_eff];
       const a = pick(R), b = pick(js);
       d = Math.max(...a.map((v, i) => Math.abs(v - b[i]) / Math.max(Math.abs(v), 1e-30)));
     } catch (e) {}
@@ -1585,12 +1630,16 @@ function settingsGroups() {
   const g = [["Configuration", [
     ["Gas exchange", params.mode === "loop" ? "Convection loop, two tubes" : "Single tube"],
     ["Pumping cell temperature", params.Th + " K"]]]];
-  ["cells", "tubes", "loop", "int", "pump", "shield", "coldrad", "cooler"].forEach(fs => {
+  const flux = params.pump_scaling === "flux";
+  ["cells", "tubes", "loop", "int", "pump", "scale", "shield", "coldrad", "cooler"].forEach(fs => {
     if (fs === "loop" && params.mode !== "loop") return;
     const rows = DEFS.filter(d => d.fs === fs && (d.toggle || fs !== "int" || params.intercept) &&
         (fs !== "loop" || d.key === "engine" || (params.engine && !(d.key === "T_engine" && params.engine_stage))) &&
-        !(d.key === "T_shield" && params.cooler_map))
-      .map(d => [d.key === "Tc" ? tcLabel() : d.label, d.toggle ? (params[d.key] ? "on" : "off") : roundTo(params[d.key], d.dp) + (d.unit ? " " + d.unit : "")]);
+        !(d.key === "T_shield" && params.cooler_map) &&
+        (flux || !FLUX_KEYS.includes(d.key)) && !(d.key === "s_light" && params.Pabs_on) &&
+        !(["Pabs_seal_mW", "Pabs_mW"].includes(d.key) && !params.Pabs_on) && !(d.key === "T1_dark_h" && !params.T1_dark_on))
+      .map(d => [d.key === "Tc" ? tcLabel() : d.label, d.toggle ? (params[d.key] ? "on" : "off")
+        : d.choice ? d.choice.find(c => c[0] === params[d.key])[1] : roundTo(params[d.key], d.dp) + (d.unit ? " " + d.unit : "")]);
     g.push([$("fs-" + fs).querySelector("legend").textContent, rows]);
   });
   return g;
@@ -1616,7 +1665,9 @@ function resultGroups() {
       ["Pumping cell", fmtPct(R.ss_pump)],
       ["Target cell", fmtPct(R.ss_target)],
       ["Target reaches 90% in", fmtTime(R.t90_target_s)],
-      ["P_t = M_ss/(1+a+b)", `a = ${R.loss_exchange.toPrecision(2)}, b = ${R.loss_capacity.toPrecision(2)}`]]],
+      ["P_t = M_ss′/(1+a+b)", `a = ${R.loss_exchange.toPrecision(2)}, b = ${R.loss_capacity.toPrecision(2)}`],
+      ["Pumping cell's M_ss′, T_b′", `${fxPct(R.pump_eff.M_ss_eff)}, ${fmtTime(R.pump_eff.T_b_eff)}`],
+      ["Production Q_0′", fmtSci(R.production_atoms_s) + " atoms/s"]]],
     ["Gas exchange", ex],
     [C.map ? "PT420, from its capacity map" : "PT420, map off", cool],
     [`Second-stage heat, ${fmtK(S.second.T)} K`, stage(S.second, sr.second)],
@@ -1835,6 +1886,9 @@ function resultSummary() {
     G_per_s: r6(R.G), G_diffusion_per_s: r6(R.G_diff), G_circulation_per_s: r6(R.G_conv),
     loop_flow_mg_per_h: r6(R.mdot_mg_h), reynolds_cold_end: r6(R.Re), N_pump: r6(R.Np), N_target: r6(R.Nt),
     a_exchange: r6(R.loss_exchange), b_capacity: r6(R.loss_capacity),
+    production_atoms_per_s: r6(R.production_atoms_s),
+    pumping: { scaling: R.pump_eff.mode, M_ss_eff: r6(R.pump_eff.M_ss_eff), T_b_eff_s: r6(R.pump_eff.T_b_eff), tau_p_eff_s: r6(R.pump_eff.T1p_eff),
+      P_lim: r6(R.pump_eff.P_lim), Q0_sealed_atoms_per_s: r6(R.pump_eff.Q0), photon_efficiency: r6(R.pump_eff.eta) },
     heat_mW: r6o(R.heat_mW),
     T_target_K: r6(R.Tc), T_first_stage_K: r6(R.T_shield), cooler: r6o(R.cooler),
     stages_W: { first: r6o(R.stages.first), second: r6o(R.stages.second),
@@ -1907,15 +1961,18 @@ function applyLoaded(doc, fname) {
   let used = 0;
   for (const [k, v] of Object.entries(src)) {
     if (!(k in DEFAULTS) || typeof v !== typeof DEFAULTS[k] || (typeof v === "number" && !isFinite(v)) ||
-        (k === "mode" && v !== "loop" && v !== "single")) { if (doc.settings) ignored.push(k); continue; }
+        (k === "mode" && v !== "loop" && v !== "single") ||
+        (k === "pump_scaling" && v !== "flux" && v !== "volume")) { if (doc.settings) ignored.push(k); continue; }
     const d = DEFS.find(d => d.key === k);
     let val = v;
-    if (d && !d.toggle) { val = Math.min(d.max, Math.max(d.min, v)); if (val !== v) clamped.push(plainText(d.label)); }
+    if (d && !d.toggle && !d.choice) { val = Math.min(d.max, Math.max(d.min, v)); if (val !== v) clamped.push(plainText(d.label)); }
     next[k] = val; used++;
   }
   if (!used) throw new Error("no settings this page recognizes");
   const legacy = "cap2_W" in src && !("cooler_map" in src);   // saved before the PT420 map: keep its fixed temperatures
   if (legacy) next.cooler_map = false;
+  const byVolume = !("pump_scaling" in src);    // saved before the flux reading of the sealed-cell fit: keep the old one
+  if (byVolume) next.pump_scaling = "volume";
   if (typeof doc.title === "string") $("figTitle").value = doc.title;
   if (typeof doc.notes === "string") $("figNotes").value = doc.notes;
   saveExportPrefs();
@@ -1923,6 +1980,7 @@ function applyLoaded(doc, fname) {
   if (clamped.length) msg += ` Limited to the slider range: ${clamped.join(", ")}.`;
   if (ignored.length) msg += ` Ignored settings this page doesn't use: ${ignored.join(", ")}.`;
   if (legacy) msg += " The file predates the PT420 map, so the map is off and its temperatures are kept.";
+  if (byVolume) msg += " The file predates the choice of pumping scaling, so pumping scales with the cell volume, as it did then.";
   setStatus(msg);
   loadCheck = doc.results && typeof doc.results.P_target_steady === "number" && !clamped.length ? doc.results : null;
   params = next;
@@ -2111,35 +2169,51 @@ const FX = [
 
   { title: "Build-up: rate equations with the laser on",
     where: ({ P }) => `From t = 0 with both cells unpolarized, laser and discharge on, for ${fmtTime(P.on_h * 3600)}.`,
-    eqs: c => [
-      ["dP_p/dt = (M_ss − P_p)/T_b − (G/N_p)(P_p − P_t)", "pumping cell: MEOP drives P_p toward M_ss at rate 1/T_b, and exchange carries polarization out"],
+    eqs: ({ P }) => (P.pump_scaling === "flux" ? [
+      ["Q_0 = N_s M_ss/T_b,   R_dis = N_s/τ_p,   P_lim = M_ss/(Γ_op T_b),   Γ_op = 1/T_b − 1/τ_p", "the sealed-cell fit read as fluxes: optical production at P = 0 and discharge relaxation [atoms/s]; N_s = p V_seal/(k_B T_h)"],
+      ["Q_0′ = s_light Q_0,   R′ = s_dis R_dis" + (P.T1_dark_on ? " + N_p/T_{1,dark}" : ""), "both happen in the discharge layer at the walls, so they scale with the absorbed light and the discharge, not with N_p" + (P.T1_dark_on ? "; gas outside the discharge relaxes with T_{1,dark}" : "")],
+      ["N_p dP_p/dt = Q_0′(1 − P_p/P_lim) − R′ P_p − G(P_p − P_t)", "pumping cell: diffusion spreads the polarization through it far faster than it builds up"],
+      ["1/T_b′ = (Q_0′/P_lim + R′)/N_p,   M_ss′ = Q_0′/(Q_0′/P_lim + R′),   τ_p′ = N_p/R′", "the same equation in the form below; with the laser shuttered only R′ is left"]] : [
+      ["M_ss′ = M_ss,   T_b′ = T_b,   τ_p′ = τ_p", "pumping scaled with the cell volume: the fit used as rates, so production N_p M_ss/T_b grows with N_p"]]).concat([
+      ["dP_p/dt = (M_ss′ − P_p)/T_b′ − (G/N_p)(P_p − P_t)", "pumping cell: MEOP drives P_p toward M_ss′ at rate 1/T_b′, and exchange carries polarization out"],
       ["dP_t/dt = (G/N_t)(P_p − P_t) − P_t/T_{1t}", "target cell: exchange brings polarization in, and it relaxes with T_{1t}"],
-      ["dP/dt = A P + b,   A = (−1/T_b − G/N_p,  G/N_p;   G/N_t,  −G/N_t − 1/T_{1t}),   b = (M_ss/T_b, 0)", "the same pair as a linear system in P = (P_p, P_t)"],
+      ["dP/dt = A P + b,   A = (−1/T_b′ − G/N_p,  G/N_p;   G/N_t,  −G/N_t − 1/T_{1t}),   b = (M_ss′/T_b′, 0)", "the same pair as a linear system in P = (P_p, P_t)"],
       ["P(t) = P_{∞} + e^{At} (P(0) − P_{∞}),   P_{∞} = −A^{−1} b","exact solution, with e^{At} from the eigenvalues of A"],
-      ["τ_{1,2} = −1/λ_{1,2}(A)", "the two build-up time constants"]],
-    how: c => "M_ss and T_b come from fitting M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field, so the pumping cell's own relaxation is already inside them. The 90% time is found by bisection on P_t(t).",
-    vals: ({ P }) => [
-      ["T_b", fmtTime(P.T_b_s)], ["N_p/G", fmtTime(R.tau_x_pump_s)], ["N_t/G", fmtTime(R.tau_x_target_s)], ["T_{1t}", fmtTime(P.T1t_h * 3600)],
+      ["τ_{1,2} = −1/λ_{1,2}(A)", "the two build-up time constants"]]),
+    how: ({ P }) => "M_ss and T_b come from fitting M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field, and τ_p is that cell's relaxation with the discharge on and the laser off. " +
+      (P.pump_scaling === "flux" ? "With s_light = s_dis and no dark relaxation, M_ss′ = M_ss whatever the size of the pumping cell; N_p sets only how long it takes to fill. " : "") +
+      "The 90% time is found by bisection on P_t(t).",
+    vals: ({ P }) => {
+      const pe = R.pump_eff;
+      return (pe.mode === "flux" ? [
+        ["N_s", fmtSci(pe.Ns)], ["Q_0", fmtSci(pe.Q0) + " atoms/s"], ["P_lim", pe.P_lim == null ? "none, Γ_op ≤ 0" : fxPct(pe.P_lim)],
+        ["s_light, s_dis", pe.s_light.toPrecision(3) + ", " + P.s_dis], ["Q_0′", fmtSci(pe.Q0p) + " atoms/s"], ["R′", fmtSci(pe.Rp) + " atoms/s"]] : [])
+        .concat([["M_ss′", fxPct(pe.M_ss_eff)], ["T_b′", fmtTime(pe.T_b_eff)], ["τ_p′", fmtTime(pe.T1p_eff)],
+      ["N_p/G", fmtTime(R.tau_x_pump_s)], ["N_t/G", fmtTime(R.tau_x_target_s)], ["T_{1t}", fmtTime(P.T1t_h * 3600)],
       ["τ_1 (slow), τ_2 (fast)", fmtTime(R.times_s[0]) + ", " + fmtTime(R.times_s[1])],
       ["P_t reaches 90% of steady state in", fmtTime(R.t90_target_s)],
-      ["At the end of pumping: P_p, P_t", fxPct(R.paper.Mp0) + ", " + fxPct(R.paper.Mt0)]],
+      ["At the end of pumping: P_p, P_t", fxPct(R.paper.Mp0) + ", " + fxPct(R.paper.Mt0)]]);
+    },
     res: c => `τ_1 = ${fmtTime(R.times_s[0])}, τ_2 = ${fmtTime(R.times_s[1])}` },
 
   { title: "Steady state",
     where: c => "Long pumping: both derivatives in step 8 set to zero.",
     eqs: c => [
-      ["P_t = M_ss / (1 + a + b)", ""],
+      ["P_t = M_ss′ / (1 + a + b)", ""],
       ["a = N_t / (G T_{1t})", "exchange too slow: the target relaxes before it is refilled"],
-      ["b = (N_t/N_p)(T_b / T_{1t})", "MEOP can't keep up: the pumping cell must also feed the target's relaxation"],
+      ["b = (N_t/N_p)(T_b′ / T_{1t}) = N_t M_ss′ / (Q_0′ T_{1t})", "MEOP can't keep up: the production must also feed the target's relaxation"],
       ["P_p = (1 + a) P_t", "the pumping cell sits above the target by the exchange loss"]],
-    how: c => "",
+    how: ({ P }) => P.pump_scaling === "flux"
+      ? (P.T1_dark_on ? "Dark relaxation in the pumping cell lowers M_ss′ as N_p grows, so a bigger pumping cell costs polarization."
+        : "Neither M_ss′ nor Q_0′ depends on N_p, so the steady state is the same for any pumping-cell volume; N_p changes only the build-up time, t_ex and the probe signal.")
+      : "With pumping scaled by the cell volume, Q_0′ = N_p M_ss/T_b, so b falls as 1/N_p and a bigger pumping cell looks like free pumping.",
     vals: ({ P }) => [
-      ["a", R.loss_exchange.toPrecision(3)], ["b", R.loss_capacity.toPrecision(3)], ["M_ss", P.M_ss + "%"],
+      ["a", R.loss_exchange.toPrecision(3)], ["b", R.loss_capacity.toPrecision(3)], ["M_ss′", fxPct(R.pump_eff.M_ss_eff)],
       ["P_t", fxPct(R.ss_target)], ["P_p", fxPct(R.ss_pump)], ["P_t/P_p = 1/(1 + a)", (R.ss_target / R.ss_pump).toFixed(3)]],
     res: c => `P_t = ${fxPct(R.ss_target)}, P_p = ${fxPct(R.ss_pump)}` },
 
   { title: "Zeroing the pumping cell: decay constants (eqs. 2 and 4)",
-    where: c => "After the build-up: laser shuttered and the pumping cell zeroed. The discharge stays on so the polarimeter can read M_p, the pumping cell now relaxes with τ_p, and nothing pumps.",
+    where: c => "After the build-up: laser shuttered and the pumping cell zeroed. The discharge stays on so the polarimeter can read M_p, the pumping cell now relaxes with τ_p = τ_p′ from step 8, and nothing pumps.",
     eqs: c => [
       ["dM_p/dt = −(1/τ_p + (N_t/N)/t_ex) M_p + ((N_t/N)/t_ex) M_t", "eq. 2, pumping cell"],
       ["dM_t/dt = ((N_p/N)/t_ex) M_p − (1/τ_t + (N_p/N)/t_ex) M_t", "eq. 2, target cell; τ_t = T_{1t}"],

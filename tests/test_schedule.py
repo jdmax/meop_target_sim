@@ -44,7 +44,8 @@ def reduced_time(k_h, P_inf, P0, P1):
 def run_reduced(levels, goal, xlim=1e-6, **S):
     """The full model with G large enough that N_p/(T_b G) = xlim for the fastest level."""
     G = NP * max(1.0 / lv["T_b_s"] for lv in levels) / xlim
-    sched = dict(m.SCHEDULE_DEFAULTS, on_h=24.0, goal_mode="abs", goal_pct=100.0 * goal, early_level=1, late_level=0)
+    sched = dict(m.SCHEDULE_DEFAULTS, on_h=24.0, goal_mode="abs", goal_pct=100.0 * goal, early_level=1, late_level=0,
+                 pump_scaling="volume")      # the levels are whole-system rates for NP abstract atoms
     sched.update(S)
     return m.schedule(NP, NT, G, T1T, levels, sched)
 
@@ -160,12 +161,12 @@ def close(a, b, path, tol):
         assert abs(a - b) <= tol * max(abs(a), abs(b), 1e-300) or abs(a - b) < 1e-300, (path, a, b)
 
 
-def run_js(params):
+def run_js(params, fn="run_schedule"):
     node = shutil.which("node")
     if not node:
         return None
     js = ("const M=require(process.argv[1]);let s='';process.stdin.on('data',d=>s+=d)"
-          ".on('end',()=>process.stdout.write(M.run_schedule(s)));")
+          ".on('end',()=>process.stdout.write(M.%s(s)));" % fn)
     p = subprocess.run([node, "-e", js, os.path.join(ROOT, "he3_model.js")], input=json.dumps(params),
                        capture_output=True, text=True, check=True)
     return json.loads(p.stdout)

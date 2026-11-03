@@ -31,11 +31,24 @@ Polarization (exact solution of the linear 2x2 system, piecewise in time):
   dPp/dt = (Mss - Pp)/Tb - (G/Np)(Pp - Pt)          laser and discharge on
   dPp/dt = -Pp/tau_p     - (G/Np)(Pp - Pt)          laser shuttered, discharge on
   dPt/dt = (G/Nt)(Pp - Pt) - Pt/tau_t
-Mss and Tb are the steady polarization and build-up time measured in a sealed
-cell at the operating pressure and field (Nikiel et al.: dM/dt = Gop (Mss - M)).
+Mss, Tb and tau_p here are the pumping cell's effective values, from a sealed cell's fit
+M(t) = M_ss (1 - exp(-t/T_b)) at the operating pressure and field (Nikiel et al.), with
+T1p its relaxation with the discharge on and the laser off. The fit is read as fluxes:
+  Q0 = N_s M_ss/T_b        optical production at P = 0 [atoms/s],  N_s = n(Th, p) V_seal
+  R_dis = N_s/T1p          discharge relaxation [atoms/s per unit P]
+  P_lim = M_ss/(Gop T_b),  Gop = 1/T_b - 1/T1p.
+At high field the discharge, and the pump light matched to it, fill a thin layer at the
+walls, and diffusion spreads polarization through the rest of the pumping cell in well
+under a second. So both fluxes are set by the discharge and the absorbed light, not by the
+pumping cell's volume:
+  Np dPp/dt = Q0' (1 - Pp/P_lim) - R' Pp - G (Pp - Pt),   Q0' = s_light Q0,  R' = s_dis R_dis + Np/T1_dark
+which is the form above with 1/Tb = (Q0'/P_lim + R')/Np, Mss = Q0'/(Q0'/P_lim + R'), tau_p = Np/R'.
+With s_light = s_dis and no dark relaxation, Mss = M_ss whatever Np is. pump_scaling = "volume"
+keeps the older reading, the fit as rates (Mss = M_ss, Tb = T_b), where production grows with Np.
 In steady state the target reaches Pt = Mss / (1 + a + b), with
   a = tau_x / T1t            exchange too slow        (tau_x = Nt/G)
-  b = (Nt/Np) (Tb / T1t)     MEOP can't keep up with target relaxation.
+  b = (Nt/Np) (Tb / T1t)     MEOP can't keep up with target relaxation
+    = Nt Mss / (Q0' T1t),    independent of Np when Mss is.
 
 Pump-cell probe (Maxwell, Epstein & Milner, arXiv:1412.6167): after the build-up
 the laser is shuttered and the pumping cell is zeroed; the discharge stays on so
@@ -62,6 +75,7 @@ RG = 8.314462
 CP = 2.5 * RG / M3              # J/kg/K, monatomic ideal gas
 GRAV = 9.81
 SIGMA = 5.670374419e-8          # W/m^2/K^4
+HNU = 6.62607015e-34 * 2.99792458e8 / 1083.0e-9     # J, a 1083 nm pump photon
 
 # ------------------------------------------------------------------ 3He gas
 ETA_300 = 17.2e-6               # Pa s at 300 K (4He value * sqrt(3/4))
@@ -740,14 +754,64 @@ def system(P):
                 G=G, G_diff=G_diff, G_conv=G_conv, Np=Np, Nt=Nt, Re=Re, lag=lag, warnings=warnings)
 
 
+def pumping_effective(P, Np, M_ss, T_b_s, T1p_s):
+    """A sealed-cell fit (M_ss as a fraction, T_b, and T1p with the discharge on and the laser off) as fluxes,
+    and the effective M_ss, T_b and T1p of a pumping cell of Np atoms that the rate equations take.
+    In flux mode the optical production Q0' and the relaxation R' are set by the discharge and the absorbed light;
+    in volume mode the fit is used as it stands, so production grows with Np."""
+    g_op = 1.0 / T_b_s - 1.0 / T1p_s
+    out = dict(mode=P["pump_scaling"], g_op=g_op, P_lim=M_ss / (g_op * T_b_s) if g_op > 0 else None, eta=None)
+    if P["pump_scaling"] == "volume":
+        out.update(Ns=None, Q0=None, R_dis=None, s_light=None, Q0p=Np * M_ss / T_b_s, Rp=Np / T1p_s,
+                   M_ss_eff=M_ss, T_b_eff=T_b_s, T1p_eff=T1p_s)
+        return out
+    Ns = n_num(P["Th"], P["p_mbar"] * 100.0) * P["V_seal_cc"] * 1e-6
+    Q0, R_dis = Ns * M_ss / T_b_s, Ns / T1p_s
+    if P["Pabs_on"]:                    # the light from the absorbed pump power, with and without the discharge
+        s_light = P["Pabs_mW"] / P["Pabs_seal_mW"]
+        out["eta"] = Q0 / (P["Pabs_seal_mW"] * 1e-3 / HNU)
+    else:
+        s_light = P["s_light"]
+    Q0p = s_light * Q0
+    Rp = P["s_dis"] * R_dis + (Np / (P["T1_dark_h"] * 3600.0) if P["T1_dark_on"] else 0.0)
+    loss = s_light * Ns * g_op + Rp     # Q0'/P_lim + R', written with Gop so that it holds for Gop <= 0 too
+    if loss <= 0:
+        raise ValueError("with T1p shorter than T_b, the light outruns the discharge relaxation and nothing limits the polarization; check T_b and T1p")
+    out.update(Ns=Ns, Q0=Q0, R_dis=R_dis, s_light=s_light, Q0p=Q0p, Rp=Rp,
+               M_ss_eff=Q0p / loss, T_b_eff=Np / loss, T1p_eff=Np / Rp)
+    return out
+
+
+def pumping_warnings(P, pe):
+    """What pumping_effective()'s result says about the inputs, in flux mode."""
+    if pe["mode"] == "volume":
+        return []
+    out = []
+    if pe["eta"] is not None and pe["eta"] > 2.0:
+        out.append("The sealed-cell fit gives %.3g polarized atoms per absorbed photon, N_s M_ss/T_b over P_abs/(h nu), more than the 2 a photon can carry: the absorbed power or the sealed-cell volume is off."
+                   % pe["eta"])
+    if pe["P_lim"] is not None and pe["M_ss_eff"] > pe["P_lim"]:
+        out.append("The pumping cell's M_ss (%.3g%%) is above P_lim (%.3g%%), which the flux form can't give; check the inputs."
+                   % (100.0 * pe["M_ss_eff"], 100.0 * pe["P_lim"]))
+    if pe["T_b_eff"] > P["on_h"] * 3600.0:
+        out.append("The pumping cell's build-up time T_b' = %.3g h is longer than the %.3g h run: the discharge can't fill a pumping cell this large in that time."
+                   % (pe["T_b_eff"] / 3600.0, P["on_h"]))
+    return out
+
+
 def compute(P):
     S = system(P)
     P, legs, mdot, sol, heat, still, stages, cooler = S["P"], S["legs"], S["mdot"], S["sol"], S["heat"], S["still"], S["stages"], S["cooler"]
     Tc = P["Tc"]
     G, G_diff, G_conv, Np, Nt, Re, lag = S["G"], S["G_diff"], S["G_conv"], S["Np"], S["Nt"], S["Re"], S["lag"]
 
-    Mss = P["M_ss"] / 100.0
-    g_b = 1.0 / P["T_b_s"]
+    pe = pumping_effective(P, Np, P["M_ss"] / 100.0, P["T_b_s"], P["tau_p_s"])
+    warnings = S["warnings"] + pumping_warnings(P, pe)
+    if pe["g_op"] <= 0:
+        warnings.append("tau_p (%s s) must be longer than the sealed-cell build-up time T_b (%s s), since 1/T_b = Gop + 1/tau_p."
+                        % (fmt4(P["tau_p_s"]), fmt4(P["T_b_s"])))
+    Mss = pe["M_ss_eff"]
+    g_b = 1.0 / pe["T_b_eff"]
     g_t = 1.0 / (P["T1t_h"] * 3600.0)
     kp, kt = G / Np, G / Nt
 
@@ -777,7 +841,7 @@ def compute(P):
             t90 = hi_t
 
     # laser shuttered at the end of the build-up, with and without zeroing the pumping cell
-    sys2 = two_cell(Np, Nt, G, P["tau_p_s"], P["T1t_h"] * 3600.0)
+    sys2 = two_cell(Np, Nt, G, pe["T1p_eff"], P["T1t_h"] * 3600.0)
     Mp0, Mt0 = pp[-1], pt[-1]
     amp_zero = amplitudes(sys2, 0.0, Mt0)
     amp_shut = amplitudes(sys2, Mp0, Mt0)
@@ -813,13 +877,13 @@ def compute(P):
         ss_pump=ss_on[0], ss_target=ss_on[1],
         times_s=eig_times(A_on),
         t90_target_s=t90,
-        production_atoms_s=g_b * Mss * Np,
-        loss_exchange=(Nt / G) * g_t, loss_capacity=(Nt / Np) * P["T_b_s"] * g_t,
+        production_atoms_s=pe["Q0p"], pump_eff=pe,
+        loss_exchange=(Nt / G) * g_t, loss_capacity=(Nt / Np) * pe["T_b_eff"] * g_t,
         t_h=[x / 3600.0 for x in t], P_pump=pp, P_target=pt,
         paper=paper,
         lag=lag,
         zero_t_s=tz, zero_P_pump=zp, zero_P_target=zt, shut_P_pump=sp, shut_P_target=st,
-        warnings=S["warnings"],
+        warnings=warnings,
     )
 
 
@@ -831,10 +895,10 @@ def run(params_json):
 
 
 # ------------------------------------------------------------------ discharge schedule
-# Each discharge level d is a sealed-cell pair (M_ss,d, T_b,d), so its net production per
-# pumping-cell atom is the straight line f_d(P) = (M_ss,d - P)/T_b,d = a_d - s_d P.
-# A discharge-on T1p only splits it: f_d = Gop (Plim - P) - P/T1p with Gop = 1/T_b - 1/T1p and
-# Gop Plim = M_ss/T_b, so it leaves f_d, and the dynamics, unchanged.
+# Each discharge level d is a sealed-cell fit (M_ss,d, T_b,d, T1p,d); pumping_effective() turns it into the
+# pumping cell's (M_ss,d', T_b,d'), so its net production per pumping-cell atom is the straight line
+# f_d(P) = (M_ss,d' - P)/T_b,d' = a_d - s_d P. In volume mode T1p only splits it: f_d = Gop (Plim - P) - P/T1p
+# with Gop = 1/T_b - 1/T1p and Gop Plim = M_ss/T_b, so it leaves f_d, and the dynamics, unchanged.
 # Within a level the rate equations are those of compute(), solved exactly; levels change at
 # events, each located by scanning the exact solution and bisecting the first bracket.
 
@@ -894,11 +958,11 @@ def fmt4(v):
     return ("%.4f" % v).rstrip("0").rstrip(".")
 
 
-def level_rates(G, Np, Nt, g_t, lv):
-    """A and b of compute()'s rate equations with discharge level lv on."""
-    g_b = 1.0 / lv["T_b_s"]
+def level_rates(G, Np, Nt, g_t, pe):
+    """A and b of compute()'s rate equations with a discharge level on; pe is its pumping_effective()."""
+    g_b = 1.0 / pe["T_b_eff"]
     kp, kt = G / Np, G / Nt
-    return [[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * (lv["M_ss"] / 100.0), 0.0]
+    return [[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * pe["M_ss_eff"], 0.0]
 
 
 def crossover(a, s, i, j):
@@ -932,20 +996,21 @@ def envelope(a, s, P_max):
 
 
 def schedule(Np, Nt, G, T1t_s, levels, S):
-    """Build-up from zero under a discharge schedule. levels: [{label, M_ss %, T_b_s, T1p_s}];
-    S: sched_mode ("single", "switch" or "envelope") and its settings, the goal and on_h."""
+    """Build-up from zero under a discharge schedule. levels: [{label, M_ss %, T_b_s, T1p_s}], sealed-cell fits;
+    S: sched_mode ("single", "switch" or "envelope") and its settings, the goal, on_h and the pumping-cell scaling."""
     if not levels:
         raise ValueError("no discharge levels")
     n = len(levels)
     g_t = 1.0 / T1t_s
     N = Np + Nt
     alpha, beta = Np / N, (Nt / N) * g_t
+    E = [pumping_effective(S, Np, lv["M_ss"] / 100.0, lv["T_b_s"], lv["T1p_s"]) for lv in levels]
     L = []
-    for lv in levels:
-        A, b = level_rates(G, Np, Nt, g_t, lv)
+    for pe in E:
+        A, b = level_rates(G, Np, Nt, g_t, pe)
         L.append(dict(A=A, xs=ss(A, b), times=eig_times(A)))
-    a = [level_rates(G, Np, Nt, g_t, lv)[1][0] for lv in levels]      # f_d(0) = M_ss/T_b
-    s = [1.0 / lv["T_b_s"] for lv in levels]                          # -df_d/dP = 1/T_b
+    a = [level_rates(G, Np, Nt, g_t, pe)[1][0] for pe in E]           # f_d(0) = M_ss'/T_b'
+    s = [1.0 / pe["T_b_eff"] for pe in E]                             # -df_d/dP = 1/T_b'
     span = S["on_h"] * 3600.0
     T_h = max(span, HORIZON_TAU * max(l["times"][0] for l in L))
     dt = T_h / SCAN_N
@@ -1039,22 +1104,23 @@ def schedule(Np, Nt, G, T1t_s, levels, S):
     goal = S["goal_frac"] / 100.0 * best_ss if S["goal_mode"] == "frac" else S["goal_pct"] / 100.0
     t_grid = [span * i / 360 for i in range(361)]
     out_levels, single_p, single_t = [], [], []
-    for d, (lv, l) in enumerate(zip(levels, L)):
+    for d, (lv, l, pe) in enumerate(zip(levels, L, E)):
         one = [seg(0.0, d, [0.0, 0.0])]
         xs = [state(one, t) for t in t_grid]
         single_p.append([x[0] for x in xs])
         single_t.append([x[1] for x in xs])
-        g_op = s[d] - 1.0 / lv["T1p_s"]
+        g_op = pe["g_op"]
         k_sys = alpha * s[d] + beta
         out_levels.append(dict(
-            label=lv["label"], M_ss=lv["M_ss"], T_b_s=lv["T_b_s"], T1p_s=lv["T1p_s"],
-            f0=a[d], slope=s[d], gamma_op=g_op, P_lim=a[d] / g_op if g_op > 0 else None,
+            label=lv["label"], M_ss=lv["M_ss"], T_b_s=lv["T_b_s"], T1p_s=lv["T1p_s"], pump_eff=pe,
+            f0=a[d], slope=s[d], gamma_op=g_op, P_lim=pe["P_lim"],
             x_lim=Np * s[d] / G, k_sys=k_sys, P_sys=alpha * a[d] / k_sys,
             ss_pump=l["xs"][0], ss_target=l["xs"][1], times_s=l["times"],
             t_goal_s=goal_time(one, goal)))
         if g_op <= 0:
             warnings.append("%s: T1p (%s s) must be longer than the sealed-cell build-up time T_b (%s s), since 1/T_b = Gop + 1/T1p."
                             % (lv["label"], fmt4(lv["T1p_s"]), fmt4(lv["T_b_s"])))
+        warnings.extend("%s: %s" % (lv["label"], w) for w in pumping_warnings(S, pe))
         if Np * s[d] / G > 0.2:
             warnings.append("%s: N_p/(T_b G) = %.2f. The exchange %s the build-up, so the pumping cell runs ahead of the target "
                             "and a stronger discharge gains less than its f_d suggests."
@@ -1074,7 +1140,7 @@ def schedule(Np, Nt, G, T1t_s, levels, S):
     elif t_goal is None:
         warnings.append("The schedule never reaches the goal of %.1f%%; it settles at %.1f%%." % (goal * 100, fin[1] * 100))
 
-    P_max = max(lv["M_ss"] for lv in levels) / 100.0
+    P_max = max(pe["M_ss_eff"] for pe in E)
     pieces = envelope(a, s, P_max)
     kinks = [(pieces[k][1], set((pieces[k][2], pieces[k + 1][2]))) for k in range(len(pieces) - 1)]
     crossings = []
@@ -1124,6 +1190,8 @@ DEFAULTS = dict(
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
+    pump_scaling="flux", V_seal_cc=49.0, s_light=1.0, s_dis=1.0, T1_dark_on=False, T1_dark_h=10.0,
+    Pabs_on=False, Pabs_seal_mW=200.0, Pabs_mW=200.0,
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,
     A_cold_cm2=300.0, eps_cold=0.05, other2_mW=0.0,

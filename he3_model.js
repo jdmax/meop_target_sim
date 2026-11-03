@@ -4,6 +4,7 @@
   "use strict";
   const KB = 1.380649e-23, NA = 6.02214076e23, M3 = 3.01603e-3, M_ATOM = M3 / NA;
   const RG = 8.314462, CP = 2.5 * RG / M3, GRAV = 9.81, SIGMA = 5.670374419e-8;
+  const HNU = 6.62607015e-34 * 2.99792458e8 / 1083.0e-9;     // J, a 1083 nm pump photon
   const ETA_300 = 17.2e-6, ETA_EXP = 0.68, RHO_D_OVER_ETA = 1.32;
   const eta = T => ETA_300 * Math.pow(T / 300, ETA_EXP);
   const k_gas = T => 3.75 * RG / M3 * eta(T);
@@ -421,10 +422,45 @@
     return { P, tube, legs, mdot, sol, heat, still, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, lag, warnings };
   }
 
+  // A sealed-cell fit (M_ss as a fraction, T_b, T1p) as fluxes, and the effective M_ss, T_b and T1p of a pumping
+  // cell of Np atoms. Flux mode: production and relaxation set by the discharge and the absorbed light; volume mode: the fit as it stands.
+  function pumping_effective(P, Np, M_ss, T_b_s, T1p_s) {
+    const g_op = 1 / T_b_s - 1 / T1p_s;
+    const out = { mode: P.pump_scaling, g_op, P_lim: g_op > 0 ? M_ss / (g_op * T_b_s) : null, eta: null };
+    if (P.pump_scaling === "volume")
+      return Object.assign(out, { Ns: null, Q0: null, R_dis: null, s_light: null, Q0p: Np * M_ss / T_b_s, Rp: Np / T1p_s,
+        M_ss_eff: M_ss, T_b_eff: T_b_s, T1p_eff: T1p_s });
+    const Ns = n_num(P.Th, P.p_mbar * 100) * P.V_seal_cc * 1e-6, Q0 = Ns * M_ss / T_b_s, R_dis = Ns / T1p_s;
+    let s_light;
+    if (P.Pabs_on) {                  // the light from the absorbed pump power, with and without the discharge
+      s_light = P.Pabs_mW / P.Pabs_seal_mW;
+      out.eta = Q0 / (P.Pabs_seal_mW * 1e-3 / HNU);
+    } else s_light = P.s_light;
+    const Q0p = s_light * Q0, Rp = P.s_dis * R_dis + (P.T1_dark_on ? Np / (P.T1_dark_h * 3600) : 0);
+    const loss = s_light * Ns * g_op + Rp;     // Q0'/P_lim + R', written with Gop so that it holds for Gop <= 0 too
+    if (loss <= 0) throw new Error("with T1p shorter than T_b, the light outruns the discharge relaxation and nothing limits the polarization; check T_b and T1p");
+    return Object.assign(out, { Ns, Q0, R_dis, s_light, Q0p, Rp, M_ss_eff: Q0p / loss, T_b_eff: Np / loss, T1p_eff: Np / Rp });
+  }
+  // what pumping_effective()'s result says about the inputs, in flux mode
+  function pumping_warnings(P, pe) {
+    if (pe.mode === "volume") return [];
+    const out = [], g3 = v => String(+v.toPrecision(3));
+    if (pe.eta !== null && pe.eta > 2)
+      out.push(`The sealed-cell fit gives ${g3(pe.eta)} polarized atoms per absorbed photon, N_s M_ss/T_b over P_abs/(h nu), more than the 2 a photon can carry: the absorbed power or the sealed-cell volume is off.`);
+    if (pe.P_lim !== null && pe.M_ss_eff > pe.P_lim)
+      out.push(`The pumping cell's M_ss (${g3(100 * pe.M_ss_eff)}%) is above P_lim (${g3(100 * pe.P_lim)}%), which the flux form can't give; check the inputs.`);
+    if (pe.T_b_eff > P.on_h * 3600)
+      out.push(`The pumping cell's build-up time T_b' = ${g3(pe.T_b_eff / 3600)} h is longer than the ${g3(P.on_h)} h run: the discharge can't fill a pumping cell this large in that time.`);
+    return out;
+  }
+  const f4 = v => v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");     // as fmt4() in the Python
+
   function compute(P0) {
     const S = system(P0), { P, legs, mdot, sol, heat, still, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, lag } = S;
     const Tc = P.Tc;
-    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
+    const pe = pumping_effective(P, Np, P.M_ss / 100, P.T_b_s, P.tau_p_s), warnings = S.warnings.concat(pumping_warnings(P, pe));
+    if (pe.g_op <= 0) warnings.push(`tau_p (${f4(P.tau_p_s)} s) must be longer than the sealed-cell build-up time T_b (${f4(P.T_b_s)} s), since 1/T_b = Gop + 1/tau_p.`);
+    const Mss = pe.M_ss_eff, g_b = 1 / pe.T_b_eff, g_t = 1 / (P.T1t_h * 3600);
     const kp = G / Np, kt = G / Nt;
     const A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]];
     const rates = { on: [A_on, [g_b * Mss, 0]], off: [A_on, [g_b * Mss, 0]] };
@@ -437,7 +473,7 @@
       while (pt_at(hi) < target && hi < 1e9) hi *= 2;
       if (hi < 1e9) { for (let i = 0; i < 60; i++) { const mid = 0.5 * (lo + hi); if (pt_at(mid) < target) lo = mid; else hi = mid; } t90 = hi; }
     }
-    const sys = two_cell(Np, Nt, G, P.tau_p_s, P.T1t_h * 3600);
+    const sys = two_cell(Np, Nt, G, pe.T1p_eff, P.T1t_h * 3600);
     const Mp0 = pp[pp.length - 1], Mt0 = pt[pt.length - 1];
     const amp_zero = amplitudes(sys, 0, Mt0), amp_shut = amplitudes(sys, Mp0, Mt0);
     const t_win = Math.max(60, 8 * sys.tau_s), tz = [];
@@ -448,7 +484,6 @@
     const { A: _A, ...paper } = sys;
     Object.assign(paper, { Mp0, Mt0, zeroed: amp_zero, shuttered: amp_shut, t_peak,
       P_peak: a_s * Math.exp(-rs * t_peak) + a_l * Math.exp(-rl * t_peak), late_ratio: a_l / amp_zero.a_lt });
-    const warnings = S.warnings;
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
@@ -456,8 +491,8 @@
       heat_still_mW: Object.fromEntries(Object.entries(still).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler,
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
-      production_atoms_s: g_b * Mss * Np,
-      loss_exchange: (Nt / G) * g_t, loss_capacity: (Nt / Np) * P.T_b_s * g_t,
+      production_atoms_s: pe.Q0p, pump_eff: pe,
+      loss_exchange: (Nt / G) * g_t, loss_capacity: (Nt / Np) * pe.T_b_eff * g_t,
       t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, paper, lag,
       zero_t_s: tz, zero_P_pump: zp, zero_P_target: zt, shut_P_pump: sp, shut_P_target: st, warnings,
     };
@@ -465,7 +500,7 @@
   function run(json) { try { return JSON.stringify(compute(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }
 
   // ---------------------------------------------------------------- discharge schedule
-  // Level d pumps with f_d(P) = (M_ss,d - P)/T_b,d = a_d - s_d P; T1p only splits it into Gop and Plim.
+  // Level d pumps with f_d(P) = (M_ss,d' - P)/T_b,d' = a_d - s_d P, from its sealed-cell fit through pumping_effective().
   const SYSTEM_KEYS = ["mode", "p_mbar", "Tc", "Th", "id_mm", "wall_mm", "length_cm",
     "engine", "engine_stage", "engine_cm", "gap_cm", "T_engine", "intercept", "T_int", "s_int_cm", "V_pump_cc", "V_target_cc",
     "T_shield", "A_shield_m2", "eps_shield", "other1_W", "A_cold_cm2", "eps_cold", "other2_mW", "cooler_map", "cooler_pct"];
@@ -501,9 +536,9 @@
     }
     return null;
   }
-  function level_rates(G, Np, Nt, g_t, lv) {
-    const g_b = 1 / lv.T_b_s, kp = G / Np, kt = G / Nt;
-    return [[[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * (lv.M_ss / 100), 0]];
+  function level_rates(G, Np, Nt, g_t, pe) {
+    const g_b = 1 / pe.T_b_eff, kp = G / Np, kt = G / Nt;
+    return [[[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * pe.M_ss_eff, 0]];
   }
   const crossover = (a, s, i, j) => s[i] === s[j] ? null : (a[i] - a[j]) / (s[i] - s[j]);
   function envelope(a, s, P_max) {
@@ -527,8 +562,9 @@
   function schedule(Np, Nt, G, T1t_s, levels, S) {
     if (!levels || !levels.length) throw new Error("no discharge levels");
     const n = levels.length, g_t = 1 / T1t_s, N = Np + Nt, alpha = Np / N, beta = (Nt / N) * g_t;
-    const L = levels.map(lv => { const [A, b] = level_rates(G, Np, Nt, g_t, lv); return { A, xs: ss(A, b), times: eig_times(A) }; });
-    const a = levels.map(lv => level_rates(G, Np, Nt, g_t, lv)[1][0]), s = levels.map(lv => 1 / lv.T_b_s);
+    const E = levels.map(lv => pumping_effective(S, Np, lv.M_ss / 100, lv.T_b_s, lv.T1p_s));
+    const L = E.map(pe => { const [A, b] = level_rates(G, Np, Nt, g_t, pe); return { A, xs: ss(A, b), times: eig_times(A) }; });
+    const a = E.map(pe => level_rates(G, Np, Nt, g_t, pe)[1][0]), s = E.map(pe => 1 / pe.T_b_eff);
     const span = S.on_h * 3600, T_h = Math.max(span, HORIZON_TAU * Math.max(...L.map(l => l.times[0]))), dt = T_h / SCAN_N;
     const warnings = [];
     const seg = (t0, level, x0) => ({ t0, level, x0 });
@@ -599,16 +635,16 @@
     const goal = S.goal_mode === "frac" ? S.goal_frac / 100 * best_ss : S.goal_pct / 100;
     const t_grid = []; for (let i = 0; i < 361; i++) t_grid.push(span * i / 360);
     const out_levels = [], single_p = [], single_t = [];
-    const f4 = v => v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");     // as fmt4() in the Python
     levels.forEach((lv, d) => {
       const l = L[d], one = [seg(0, d, [0, 0])], xs = t_grid.map(t => state(one, t));
       single_p.push(xs.map(x => x[0])); single_t.push(xs.map(x => x[1]));
-      const g_op = s[d] - 1 / lv.T1p_s, k_sys = alpha * s[d] + beta;
-      out_levels.push({ label: lv.label, M_ss: lv.M_ss, T_b_s: lv.T_b_s, T1p_s: lv.T1p_s,
-        f0: a[d], slope: s[d], gamma_op: g_op, P_lim: g_op > 0 ? a[d] / g_op : null,
+      const pe = E[d], g_op = pe.g_op, k_sys = alpha * s[d] + beta;
+      out_levels.push({ label: lv.label, M_ss: lv.M_ss, T_b_s: lv.T_b_s, T1p_s: lv.T1p_s, pump_eff: pe,
+        f0: a[d], slope: s[d], gamma_op: g_op, P_lim: pe.P_lim,
         x_lim: Np * s[d] / G, k_sys, P_sys: alpha * a[d] / k_sys,
         ss_pump: l.xs[0], ss_target: l.xs[1], times_s: l.times, t_goal_s: goal_time(one, goal) });
       if (g_op <= 0) warnings.push(`${lv.label}: T1p (${f4(lv.T1p_s)} s) must be longer than the sealed-cell build-up time T_b (${f4(lv.T_b_s)} s), since 1/T_b = Gop + 1/T1p.`);
+      pumping_warnings(S, pe).forEach(w => warnings.push(`${lv.label}: ${w}`));
       if (Np * s[d] / G > 0.2) warnings.push(`${lv.label}: N_p/(T_b G) = ${(Np * s[d] / G).toFixed(2)}. The exchange ${Np * s[d] / G > 1 ? "limits" : "is close to limiting"} the build-up, so the pumping cell runs ahead of the target ` +
         "and a stronger discharge gains less than its f_d suggests.");
     });
@@ -622,7 +658,7 @@
     if (goal > best_ss) warnings.push(`No level on its own reaches the goal of ${(goal * 100).toFixed(1)}%: the best steady state is ${(best_ss * 100).toFixed(1)}%.`);
     else if (t_goal === null) warnings.push(`The schedule never reaches the goal of ${(goal * 100).toFixed(1)}%; it settles at ${(fin[1] * 100).toFixed(1)}%.`);
 
-    const P_max = Math.max(...levels.map(lv => lv.M_ss)) / 100, pieces = envelope(a, s, P_max);
+    const P_max = Math.max(...E.map(pe => pe.M_ss_eff)), pieces = envelope(a, s, P_max);
     const kinks = pieces.slice(0, -1).map((p, k) => [p[1], p[2], pieces[k + 1][2]]);
     const crossings = [];
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
