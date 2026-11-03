@@ -163,7 +163,6 @@ dl.facts dd { margin: 0; text-align: right; font-family: var(--font-mono); font-
   border-radius: 7px; padding: 6px 14px; cursor: pointer;
 }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
-a.btn { text-decoration: none; display: inline-block; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* save and load */
@@ -277,7 +276,6 @@ footer.site a { color: var(--accent); }
     <p class="sub intro">Warm MEOP pumping cell and cold target cell, filled to the operating pressure at temperature and then valved off. Set the tube geometry and the pumping and relaxation rates; the transfer model runs in Python in your browser, and the Formulas tab lays out its equations step by step.</p>
     <p class="sub refs">Background: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">“A concept for polarized ³He targets for high luminosity scattering experiments in high magnetic field environments”</a> (arXiv:2106.06606), and J.D. Maxwell, C.S. Epstein &amp; R.G. Milner, <a href="https://arxiv.org/abs/1412.6167">“Diffusive transfer of polarized ³He gas through depolarizing magnetic gradients”</a> (arXiv:1412.6167).</p>
     <div class="head-actions">
-      <a class="btn ghost" href="discharge_schedule.html" title="When to switch from a strong discharge to a weaker one">Discharge schedule →</a>
       <button class="btn ghost" type="button" id="saveToggle" aria-expanded="false" aria-controls="savePanel">Save / load</button>
       <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
     </div>

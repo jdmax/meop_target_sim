@@ -26,8 +26,6 @@ It is published at **<https://jdmax.github.io/meop_target_sim/>**.
 - **Gas temperature against the wall (a diagnostic).** The model takes the gas at the wall temperature. The **Heat loads** tab also estimates how far the flowing gas lags the wall: it exchanges heat with the model's wall profile as fully developed laminar flow does (Nusselt number 3.66), catching up over a length `λ = ṁ c_p / (Nu π k_gas)` that is about 1 mm at 300 K and 1–1.5 cm at 5 K. The tab plots wall and gas along both tubes and gives the gas temperature at each clamp, where it reaches the target cell, and the heat it carries past the intercept; a warning appears when the lag is large. The estimate holds the wall profile fixed, so it is not fed back into the solution.
 - **The cryocooler (PT420 capacity map).** The stage temperatures come from Cryomech's PT420-RM reference capacity chart, read off at its 30 points and interpolated bilinearly in the two loads. The first stage floats at whatever temperature the two loads give. A trim heater holds the second stage at the target set point; if the loads alone keep it warmer, the target runs at that temperature, and the whole model uses it. The tube solution depends on the target temperature, so it is re-solved with secant steps until the two agree. A performance setting derates the chart; the certified rating, 1.8 W at 4.2 K with 50 W at 45 K, is a little below the reference curve. With the map off, both temperatures are fixed and the map gives each stage's capacity there. The **Heat loads** tab plots the operating point on the chart; hover over it to read the loads that give any pair of stage temperatures.
 
-- **Discharge schedule** (a separate page, `discharge_schedule.html`). A strong discharge pumps fast to a lower polarization and a weak one slowly to a higher one. Each discharge level is entered as its sealed-cell `Mss` and `Tb` (plus the discharge-on `T1p`, which splits `1/Tb` into `Γop + 1/T1p` and gives `Plim`), so its net production per pumping-cell atom is the straight line `f_d(P) = (Mss,d − P)/Tb,d`. Because the target holds ~120× the pumping cell's atoms and the system is MEOP-limited (`Np/(Tb G)` ≪ 1), the cells share nearly one polarization, and the time to a goal, `∫ dP/(dP/dt)`, is shortest when each `dP` uses the level with the larger `f_d(P)`. Target relaxation subtracts the same at a given P for every level, so the crossover `P* = (Mss,H/Tb,H − Mss,L/Tb,L)/(1/Tb,H − 1/Tb,L)` doesn't depend on the losses (in whole-system terms, `P* = (k_H P_H − k_L P_L)/(k_H − k_L)`). The page runs one level, a two-level switch (at `P*`, at a set pumping-cell polarization, or at a set time) or follows the upper envelope of `f_d(Pp)` with optional hysteresis and minimum dwell. Each constant-level stretch uses the exact two-cell solution, with switches located by bisection on it. It reports the time to a goal (absolute, or a share of the best single-level steady state) for each level alone and for the schedule, and warns when `Np/(Tb G)` exceeds 0.2 for a level, since the exchange then starts to limit the build-up. The default levels are placeholders to be replaced with measurements.
-
 The **Formulas** tab lays these out as eleven steps in the order the model runs them. Each step gives its equations, what they apply to, how the result is reached, and the numbers they produce for the current settings.
 
 **Not modeled:** the temperature drop between the second stage and the target cell, radiation exchanged with the tube walls (only the direct line of sight down each bore is counted), relaxation in the tubes, bends, 3-D flow in the cells, and quantum corrections to ³He transport below about 20 K. The borosilicate conductivity table and the default cell volumes and MEOP rates are approximate placeholders.
@@ -54,18 +52,16 @@ A separate page, **<https://jdmax.github.io/meop_target_sim/glass_joint/>**, mod
 | File | Purpose |
 |---|---|
 | `index.html` | The page: controls, schematic, the Polarization, Heat loads and Formulas tabs |
-| `discharge_schedule.html` | The discharge-schedule page. It shares the cell, tube and cooler settings with `index.html` |
-| `he3_model.py` | The model. Both pages fetch this file and run it in Pyodide: `run()` for the main page, `run_schedule()` for the schedule page |
+| `he3_model.py` | The model. The page fetches this file and runs it in Pyodide |
 | `he3_model.js` | Line-for-line JavaScript port, used for instant previews while a slider is dragged and as a fallback if Python can't start |
-| `tests/` | Checks of the schedule model: reduced-model hand calculations, the single-level trace against `run()`, and Python/JavaScript parity (`python tests/test_schedule.py`, `node tests/test_schedule.js`) |
 | `glass_joint/` | Transfer-tube joint stress analysis: finite-element model, results and its page (`glass_joint/index.html`) |
-| `.github/workflows/pages.yml` | Deploys both simulator pages, the model files and the joint-stress page to GitHub Pages on each push to `main` |
+| `.github/workflows/pages.yml` | Deploys the simulator files and the joint-stress page to GitHub Pages on each push to `main` |
 
 ## Editing the model
 
-Edit `he3_model.py` and push. The main page calls `run(params_json)`, the schedule page `run_schedule(params_json)`, and each expects the same JSON keys back. Both take the tube, cooler and exchange results from `system()`.
+Edit `he3_model.py` and push. The page calls `run(params_json)` and expects the same JSON keys back.
 
-After each Python run, each page compares the result against the JavaScript port. While they agree, it uses the JavaScript port for instant slider previews. If they differ, the status line at the bottom of the Formulas tab says so and the page waits for Python instead. To restore instant previews, mirror the change in `he3_model.js`. If the change alters an equation, update its step in the `FX` list in `index.html`.
+After each Python run, the page compares the result against the JavaScript port. While they agree, it uses the JavaScript port for instant slider previews. If they differ, the status line at the bottom of the Formulas tab says so and the page waits for Python instead. To restore instant previews, mirror the change in `he3_model.js`. If the change alters an equation, update its step in the `FX` list in `index.html`.
 
 ## Run locally
 
@@ -75,14 +71,7 @@ The page reads `he3_model.py` with `fetch`, which browsers block for `file://` p
 python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000, or http://localhost:8000/discharge_schedule.html for the schedule page.
-
-To check the schedule model, and that the JavaScript port matches it (this needs Node.js), run from the repository root:
-
-```
-python3 tests/test_schedule.py
-node tests/test_schedule.js
-```
+Then open http://localhost:8000.
 
 ## Author
 Written in 2026 by J. Maxwell (https://orcid.org/0000-0003-2710-4646).
