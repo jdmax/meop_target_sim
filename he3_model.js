@@ -234,6 +234,48 @@
             t.map(x => amp.a_lt * Math.exp(-rl * x) - amp.a_st * Math.exp(-rs * x))];
   }
 
+  // How far the flowing gas lags the tube wall (a diagnostic; the model takes the gas at the wall temperature):
+  // along the flow dTg/dx = -(Tg - Tw)/lam, lam = |mdot| cp / (Nu pi k_gas(film)), from the cell the gas leaves.
+  const NU_LAMINAR = 3.66, LAG_STEPS = 2000;
+  function gas_lag(sol, legs, mdot, Tc) {
+    if (mdot === 0) return null;
+    const mcp = Math.abs(mdot) * CP, lam_of = T => mcp / (NU_LAMINAR * Math.PI * k_gas(T));
+    const out = sol.map((s, i) => {
+      const prof = s.profile, L = s.length * 100, n = LAG_STEPS, m = prof.length, leg = legs[i];
+      const xs = [], tw = [];
+      let j = 1;
+      for (let k = 0; k <= n; k++) {
+        const x = L * k / n; xs.push(x);
+        while (j < m - 1 && x > prof[j][0]) j++;
+        const [s0, t0] = prof[j - 1], [s1, t1] = prof[j];
+        tw.push(s1 <= s0 ? t1 : t0 + (t1 - t0) * (x - s0) / (s1 - s0));
+      }
+      const up = (i === 0) === (mdot > 0), tg = new Array(n + 1).fill(0), dx = L / n * 0.01;
+      let g = null;
+      for (let c = 0; c <= n; c++) {
+        const k = up ? c : n - c;
+        g = g === null ? tw[k] : tw[k] + (g - tw[k]) * Math.exp(-dx / lam_of(0.5 * (g + tw[k])));
+        tg[k] = g;
+      }
+      let kmax = 0;
+      for (let k = 1; k <= n; k++) if (Math.abs(tg[k] - tw[k]) > Math.abs(tg[kmax] - tw[kmax])) kmax = k;
+      const marks = [];
+      let x = 0;
+      leg.nodes.forEach(([Tn, cl, kind], ni) => {
+        (cl > 0 ? [x, x + cl * 100] : [x]).forEach(xm => {
+          const k = Math.min(n, Math.max(0, Math.floor(xm / L * n + 0.5)));
+          marks.push([kind, xs[k], tw[k], tg[k]]);
+        });
+        x += cl * 100 + (ni < leg.free.length ? leg.free[ni] * 100 : 0);
+      });
+      const end = up ? n : 0, profile = [];
+      for (let k = 0; k <= n; k += Math.floor(n / 100)) profile.push([xs[k], tw[k], tg[k]]);
+      return { up, max_K: tg[kmax] - tw[kmax], s_max_cm: xs[kmax], T_wall_max: tw[kmax], arrive_K: tg[end], arrive_wall_K: tw[end], marks, profile };
+    });
+    let past = 0;
+    out.filter(d => !d.up).forEach(d => d.marks.forEach(mk => { if (mk[0] === "intercept") past += mcp * (mk[3] - mk[2]); }));
+    return { mcp_W_K: mcp, lam_cold_mm: lam_of(Tc) * 1e3, legs: out, past_intercept_W: past };
+  }
   function disk_view(r, L) {
     const R = r / L, X = 2 + 1 / (R * R);
     return 2 / (X + Math.sqrt(X * X - 4));
@@ -289,7 +331,13 @@
     const sol = legs.map((leg, i) => solve_leg(leg, tube, p, i === 0 ? mdot : -mdot, true));
     const heat = { cold: 0, intercept: 0, engine: 0, warm: 0 };
     sol.forEach(s => s.heats.forEach(([k, , q]) => { heat[k] += q; }));
-    return [tube, legs, errs, mdot, sol, heat];
+    // the same tubes with no flow, conduction alone: the difference is the heat the circulating gas carries between clamps
+    let still = Object.assign({}, heat);
+    if (mdot !== 0) {
+      still = { cold: 0, intercept: 0, engine: 0, warm: 0 };
+      legs.forEach(leg => solve_leg(leg, tube, p, 0).heats.forEach(([k, , q]) => { still[k] += q; }));
+    }
+    return [tube, legs, errs, mdot, sol, heat, still];
   }
   function cooler_solve(P) {
     const sc = P.cooler_pct / 100, Tset = P.Tc, on1 = engine_on_stage(P);
@@ -335,13 +383,18 @@
   // cooler, tubes and exchange: everything the rate equations take from the transfer model
   function system(P0) {
     const [P, th, stages, cooler] = cooler_solve(P0);
-    const [tube, legs, errs, mdot, sol, heat] = th;
+    const [tube, legs, errs, mdot, sol, heat, still] = th;
     const p = P.p_mbar * 100, Tc = P.Tc, Th = P.Th;
     const G_diff = sol.reduce((s, x) => s + 1 / x.R_diff, 0), G_conv = Math.abs(mdot) / M_ATOM, G = G_diff + G_conv;
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
     const warnings = errs.slice(), Re = 4 * Math.abs(mdot) / (Math.PI * tube.d * eta(Tc));
-    if (Re > 50) warnings.push(`Reynolds number ${Re.toFixed(0)} at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow.`);
     const g3 = v => String(+v.toPrecision(3));
+    const lag = gas_lag(sol, legs, mdot, Tc);
+    if (lag) {
+      const dn = lag.legs.filter(d => !d.up)[0], icp = dn.marks.filter(mk => mk[0] === "intercept");
+      if (Math.max(...lag.legs.map(d => Math.abs(d.max_K))) > 10 || dn.arrive_K - dn.arrive_wall_K > Math.max(1, 0.2 * Tc))
+        warnings.push(`The gas lags the tube walls near the cold end: coming down, it ${icp.length ? `passes the intercept at ${g3(icp[0][3])} K (wall ${g3(icp[0][2])} K) and ` : ""}reaches the target cell at ${g3(dn.arrive_K)} K (target ${g3(Tc)} K). The model takes the gas at the wall temperature, so it ${icp.length ? "puts too much of the heat on the intercept and " : ""}likely overestimates the loop flow; see the gas temperature on the Heat loads tab.`);
+    }
     if (cooler.map) {
       if (!cooler.held) {
         const cap2 = stages.second.capacity;
@@ -365,11 +418,11 @@
     if (P.mode === "loop" && mdot < 0)
       warnings.push("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.");
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
-    return { P, tube, legs, mdot, sol, heat, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, warnings };
+    return { P, tube, legs, mdot, sol, heat, still, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, lag, warnings };
   }
 
   function compute(P0) {
-    const S = system(P0), { P, legs, mdot, sol, heat, stages, cooler, G, G_diff, G_conv, Np, Nt, Re } = S;
+    const S = system(P0), { P, legs, mdot, sol, heat, still, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, lag } = S;
     const Tc = P.Tc;
     const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
     const kp = G / Np, kt = G / Nt;
@@ -399,12 +452,13 @@
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
-      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler,
+      heat_mW: Object.fromEntries(Object.entries(heat).map(([k, v]) => [k, v * 1e3])),
+      heat_still_mW: Object.fromEntries(Object.entries(still).map(([k, v]) => [k, v * 1e3])), stages, Tc, T_shield: P.T_shield, T_engine: P.T_engine, cooler,
       legs: sol.map((s, i) => ({ profile: s.profile, length_cm: s.length * 100, nodes: legs[i].nodes.map(n => [n[0], n[1] * 100, n[2]]), free_cm: legs[i].free.map(f => f * 100), G_diff: 1 / s.R_diff })),
       ss_pump: ss_on[0], ss_target: ss_on[1], times_s: eig_times(A_on), t90_target_s: t90,
       production_atoms_s: g_b * Mss * Np,
       loss_exchange: (Nt / G) * g_t, loss_capacity: (Nt / Np) * P.T_b_s * g_t,
-      t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, paper,
+      t_h: t.map(x => x / 3600), P_pump: pp, P_target: pt, paper, lag,
       zero_t_s: tz, zero_P_pump: zp, zero_P_target: zt, shut_P_pump: sp, shut_P_target: st, warnings,
     };
   }
