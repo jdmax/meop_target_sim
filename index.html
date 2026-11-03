@@ -567,7 +567,7 @@ const DEFAULTS = {
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
-  pump_scaling: "flux", V_seal_cc: 49, s_dis: 1, T1_dark_on: false, T1_dark_h: 10,
+  pump_scaling: "flux", V_seal_cc: 49, s_dis: 1,
   Pabs_on: false, Pabs_seal_mW: 200, Pabs_mW: 200,
   on_h: 24,
   T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
@@ -575,7 +575,7 @@ const DEFAULTS = {
   cooler_map: true, cooler_pct: 100,
 };
 // the pumping-cell scaling: rows that only flux mode uses, and those the absorbed-power helper sets or uses
-const FLUX_KEYS = ["V_seal_cc", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW", "T1_dark_on", "T1_dark_h"];
+const FLUX_KEYS = ["V_seal_cc", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW"];
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
@@ -603,8 +603,6 @@ const DEFS = [
   { fs: "scale", key: "Pabs_on", label: "s from the absorbed pump power", toggle: true },
   { fs: "scale", key: "Pabs_seal_mW", label: "Absorbed power, sealed cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
   { fs: "scale", key: "Pabs_mW", label: "Absorbed power, pumping cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
-  { fs: "scale", key: "T1_dark_on", label: "Gas outside the discharge relaxes", toggle: true },
-  { fs: "scale", key: "T1_dark_h", label: "T_1 outside the discharge (T_{1,dark})", unit: "h", min: 0.05, max: 1000, log: true, dp: 2 },
   { fs: "shield", key: "T_shield", label: "First-stage / shield temperature", unit: "K", min: 20, max: 120, dp: 0 },
   { fs: "shield", key: "A_shield_m2", label: "Shield area facing 300 K", unit: "m²", min: 0.02, max: 5, log: true, dp: 3 },
   { fs: "shield", key: "eps_shield", label: "Effective emissivity, 300 K → shield (MLI)", unit: "", min: 0.0005, max: 0.2, log: true, dp: 4 },
@@ -693,7 +691,6 @@ function syncInputs() {
   FLUX_KEYS.forEach(k => { const it = inputs[k]; (it.cb ? it.cb.closest(".toggle") : it.num.closest(".row")).hidden = !flux; });
   ["Pabs_seal_mW", "Pabs_mW"].forEach(k => { inputs[k].num.closest(".row").hidden = !flux || !params.Pabs_on; });
   inputs.s_dis.num.disabled = inputs.s_dis.rng.disabled = !!params.Pabs_on;     // the absorbed powers set it
-  inputs.T1_dark_h.num.disabled = inputs.T1_dark_h.rng.disabled = !params.T1_dark_on;
   $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
   $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
   $("fs-loop").hidden = params.mode !== "loop";
@@ -837,8 +834,7 @@ function show(res, source) {
     ? richHTML(`The fit is read as fluxes, which the discharge sets, with the pump light taken to keep up with it: Q_0 = N_s·M_ss/T_b = ${fmtSci(pe.Q0)} atoms/s with N_s = ${fmtSci(pe.Ns)} sealed-cell atoms, scaled by s` +
         (params.Pabs_on ? ` = P_abs/P_{abs,seal} = ${pe.s.toPrecision(3)}` : "") + ". " +
         (pe.eta != null ? `Photon efficiency η = Q_0/(P_{abs,seal}/hν) = ${pe.eta.toPrecision(3)} polarized atoms per absorbed photon, at most 2. ` : "") +
-        (params.T1_dark_on ? "Gas outside the discharge relaxes too, so a bigger pumping cell lowers the steady state."
-          : "The rest of the pumping cell only shares polarization by diffusion, so its size sets the build-up time but not the steady state."))
+        "The rest of the pumping cell only shares polarization by diffusion, and is taken to relax far more slowly than it is pumped, so its size sets the build-up time but not the steady state.")
     : "The fit is taken as rates, so production grows with the pumping-cell volume, as in settings saved before this choice. With the discharge in a thin layer at the walls, the absorbed light sets production instead.";
 
   // pumping-cell probe, in the terms of arXiv:1412.6167
@@ -1636,7 +1632,7 @@ function settingsGroups() {
         (fs !== "loop" || d.key === "engine" || (params.engine && !(d.key === "T_engine" && params.engine_stage))) &&
         !(d.key === "T_shield" && params.cooler_map) &&
         (flux || !FLUX_KEYS.includes(d.key)) && !(d.key === "s_dis" && params.Pabs_on) &&
-        !(["Pabs_seal_mW", "Pabs_mW"].includes(d.key) && !params.Pabs_on) && !(d.key === "T1_dark_h" && !params.T1_dark_on))
+        !(["Pabs_seal_mW", "Pabs_mW"].includes(d.key) && !params.Pabs_on))
       .map(d => [d.key === "Tc" ? tcLabel() : d.label, d.toggle ? (params[d.key] ? "on" : "off")
         : d.choice ? d.choice.find(c => c[0] === params[d.key])[1] : roundTo(params[d.key], d.dp) + (d.unit ? " " + d.unit : "")]);
     g.push([$("fs-" + fs).querySelector("legend").textContent, rows]);
@@ -2170,9 +2166,9 @@ const FX = [
     where: ({ P }) => `From t = 0 with both cells unpolarized, laser and discharge on, for ${fmtTime(P.on_h * 3600)}.`,
     eqs: ({ P }) => (P.pump_scaling === "flux" ? [
       ["Q_0 = N_s M_ss/T_b,   R_dis = N_s/τ_p,   P_lim = M_ss/(Γ_op T_b),   Γ_op = 1/T_b − 1/τ_p", "the sealed-cell fit read as fluxes: optical production at P = 0 and discharge relaxation [atoms/s]; N_s = p V_seal/(k_B T_h)"],
-      ["Q_0′ = s Q_0,   R′ = s R_dis" + (P.T1_dark_on ? " + N_p/T_{1,dark}" : ""), "both happen in the discharge layer at the walls, so they scale with the discharge, s times the sealed cell's, not with N_p; the pump light is taken to keep up with the discharge" + (P.T1_dark_on ? ". Gas outside the discharge relaxes with T_{1,dark}" : "")],
+      ["Q_0′ = s Q_0,   R′ = s R_dis", "both happen in the discharge layer at the walls, so they scale with the discharge, s times the sealed cell's, not with N_p; the pump light is taken to keep up with the discharge, and the gas outside it to relax far more slowly than it is pumped"],
       ["N_p dP_p/dt = Q_0′(1 − P_p/P_lim) − R′ P_p − G(P_p − P_t)", "pumping cell: diffusion spreads the polarization through it far faster than it builds up"],
-      ["1/T_b′ = (Q_0′/P_lim + R′)/N_p = (s N_s/T_b" + (P.T1_dark_on ? " + N_p/T_{1,dark}" : "") + ")/N_p,   M_ss′ = Q_0′/(Q_0′/P_lim + R′),   τ_p′ = N_p/R′", "the same equation in the form below; with the laser shuttered only R′ is left"]] : [
+      ["1/T_b′ = (Q_0′/P_lim + R′)/N_p = s N_s/(N_p T_b),   M_ss′ = Q_0′/(Q_0′/P_lim + R′) = M_ss,   τ_p′ = N_p/R′ = τ_p N_p/(s N_s)", "the same equation in the form below; with the laser shuttered only R′ is left"]] : [
       ["M_ss′ = M_ss,   T_b′ = T_b,   τ_p′ = τ_p", "pumping scaled with the cell volume: the fit used as rates, so production N_p M_ss/T_b grows with N_p"]]).concat([
       ["dP_p/dt = (M_ss′ − P_p)/T_b′ − (G/N_p)(P_p − P_t)", "pumping cell: MEOP drives P_p toward M_ss′ at rate 1/T_b′, and exchange carries polarization out"],
       ["dP_t/dt = (G/N_t)(P_p − P_t) − P_t/T_{1t}", "target cell: exchange brings polarization in, and it relaxes with T_{1t}"],
@@ -2180,7 +2176,7 @@ const FX = [
       ["P(t) = P_{∞} + e^{At} (P(0) − P_{∞}),   P_{∞} = −A^{−1} b","exact solution, with e^{At} from the eigenvalues of A"],
       ["τ_{1,2} = −1/λ_{1,2}(A)", "the two build-up time constants"]]),
     how: ({ P }) => "M_ss and T_b come from fitting M(t) = M_ss(1 − e^{−t/T_b}) to a build-up in a sealed cell at the operating pressure and field, and τ_p is that cell's relaxation with the discharge on and the laser off. " +
-      (P.pump_scaling === "flux" ? (P.T1_dark_on ? "" : "With no dark relaxation, M_ss′ = M_ss whatever the size of the pumping cell or the discharge; N_p/s sets only how long it takes to fill. ") : "") +
+      (P.pump_scaling === "flux" ? "M_ss′ = M_ss whatever the size of the pumping cell or the discharge. N_p/s sets T_b′, how long the pumping cell takes to fill; s alone sets the production Q_0′ that the target's relaxation draws on (b, step 9). " : "") +
       "The 90% time is found by bisection on P_t(t).",
     vals: ({ P }) => {
       const pe = R.pump_eff;
@@ -2203,8 +2199,7 @@ const FX = [
       ["b = (N_t/N_p)(T_b′ / T_{1t}) = N_t M_ss′ / (Q_0′ T_{1t})", "MEOP can't keep up: the production must also feed the target's relaxation"],
       ["P_p = (1 + a) P_t", "the pumping cell sits above the target by the exchange loss"]],
     how: ({ P }) => P.pump_scaling === "flux"
-      ? (P.T1_dark_on ? "Dark relaxation in the pumping cell lowers M_ss′ as N_p grows, so a bigger pumping cell costs polarization."
-        : "Neither M_ss′ nor Q_0′ depends on N_p, so the steady state is the same for any pumping-cell volume; N_p changes only the build-up time, t_ex and the probe signal.")
+      ? "Neither M_ss′ nor Q_0′ depends on N_p, so the steady state is the same for any pumping-cell volume; N_p changes only the build-up time, t_ex and the probe signal."
       : "With pumping scaled by the cell volume, Q_0′ = N_p M_ss/T_b, so b falls as 1/N_p and a bigger pumping cell looks like free pumping.",
     vals: ({ P }) => [
       ["a", R.loss_exchange.toPrecision(3)], ["b", R.loss_capacity.toPrecision(3)], ["M_ss′", fxPct(R.pump_eff.M_ss_eff)],

@@ -436,10 +436,9 @@
       s = P.Pabs_mW / P.Pabs_seal_mW;
       out.eta = Q0 / (P.Pabs_seal_mW * 1e-3 / HNU);
     } else s = P.s_dis;
-    const dark = P.T1_dark_on ? Np / (P.T1_dark_h * 3600) : 0;
-    const Q0p = s * Q0, Rp = s * R_dis + dark;
-    const loss = s * Ns / T_b_s + dark;        // Q0'/P_lim + R' = s Ns (Gop + 1/T1p) + dark
-    return Object.assign(out, { Ns, Q0, R_dis, s, Q0p, Rp, M_ss_eff: Q0p / loss, T_b_eff: Np / loss, T1p_eff: Np / Rp });
+    const k = Np / (s * Ns);                   // pumping-cell atoms per sealed-cell atom of discharge
+    return Object.assign(out, { Ns, Q0, R_dis, s, Q0p: s * Q0, Rp: s * R_dis,
+      M_ss_eff: M_ss, T_b_eff: k * T_b_s, T1p_eff: k * T1p_s });     // Q0'/P_lim + R' = s Ns (Gop + 1/T1p) = s Ns/T_b
   }
   // what pumping_effective()'s result says about the inputs, in flux mode
   function pumping_warnings(P, pe) {

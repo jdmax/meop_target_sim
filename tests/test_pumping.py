@@ -47,8 +47,7 @@ def test_flux_reproduces_volume_mode():
 
 
 def test_volume_independence():
-    """Without dark relaxation the steady state and the production don't depend on the pumping cell's size;
-    only the dynamics do."""
+    """The steady state and the production don't depend on the pumping cell's size; only the dynamics do."""
     base = m.compute(dict(FLUX))
     t90 = []
     for V in (20.0, 49.0, 100.0, 400.0):
@@ -58,6 +57,9 @@ def test_volume_independence():
         assert abs(r["pump_eff"]["M_ss_eff"] - m.DEFAULTS["M_ss"] / 100.0) < 1e-12
         t90.append(r["t90_target_s"])
     assert all(b > a for a, b in zip(t90, t90[1:])), t90        # a bigger cell takes longer to fill
+    # a bigger discharge does help: b falls as 1/s
+    r = m.compute(dict(FLUX, s_dis=2.0))
+    assert abs(r["loss_capacity"] * 2.0 / base["loss_capacity"] - 1) < 1e-12 and r["ss_target"] > base["ss_target"]
     # in volume mode a bigger pumping cell pumps harder
     assert m.compute(dict(VOLUME, V_pump_cc=400.0))["ss_target"] > base["ss_target"] * 1.3
 
@@ -76,13 +78,6 @@ def test_scaling():
     # T1p < T_b leaves M_ss and T_b as measured
     e = m.pumping_effective(dict(FLUX, s_dis=3.0), Np, 0.5, 150.0, 100.0)
     assert e["P_lim"] is None and abs(e["M_ss_eff"] / 0.5 - 1) < 1e-12
-
-
-def test_dark_relaxation():
-    """Gas outside the discharge that relaxes on its own makes a bigger pumping cell cost polarization."""
-    ss = [m.compute(dict(FLUX, V_pump_cc=V, T1_dark_on=True, T1_dark_h=0.5))["ss_target"] for V in (20.0, 49.0, 100.0, 400.0)]
-    assert all(b < a for a, b in zip(ss, ss[1:])), ss
-    assert ss[0] < m.compute(dict(FLUX, V_pump_cc=20.0))["ss_target"]
 
 
 def test_photon_efficiency():
@@ -106,7 +101,7 @@ def test_warnings():
 
 
 PARITY_CASES = [
-    dict(V_pump_cc=250.0, s_dis=2.0, T1_dark_on=True, T1_dark_h=3.0),
+    dict(V_pump_cc=250.0, s_dis=2.0, T1t_h=3.0),
     dict(V_pump_cc=15.0, s_dis=0.3, mode="single", on_h=2.0),
     dict(V_pump_cc=120.0, V_seal_cc=30.0, Pabs_on=True, Pabs_seal_mW=1.0, Pabs_mW=3.0, s_dis=1.5),
     dict(tau_p_s=100.0, s_dis=4.0),

@@ -40,10 +40,11 @@ T1p its relaxation with the discharge on and the laser off. The fit is read as f
 At high field the discharge, and the pump light matched to it, fill a thin layer at the
 walls, and diffusion spreads polarization through the rest of the pumping cell in well
 under a second. So both fluxes are set by the discharge, not by the pumping cell's volume. The
-light is taken to keep up with the discharge, so both scale with its size relative to the sealed cell, s:
-  Np dPp/dt = Q0' (1 - Pp/P_lim) - R' Pp - G (Pp - Pt),   Q0' = s Q0,  R' = s R_dis + Np/T1_dark
-which is the form above with 1/Tb = (Q0'/P_lim + R')/Np = (s N_s/T_b + Np/T1_dark)/Np,
-Mss = Q0'/(Q0'/P_lim + R'), tau_p = Np/R'. With no dark relaxation, Mss = M_ss whatever Np is. pump_scaling = "volume"
+light is taken to keep up with the discharge, so both scale with its size relative to the sealed cell, s,
+and the gas outside the discharge is taken to relax far more slowly than it is pumped:
+  Np dPp/dt = Q0' (1 - Pp/P_lim) - R' Pp - G (Pp - Pt),   Q0' = s Q0,  R' = s R_dis
+which is the form above with 1/Tb = (Q0'/P_lim + R')/Np = s N_s/(Np T_b), Mss = Q0'/(Q0'/P_lim + R') = M_ss
+and tau_p = Np/R' = tau_p,seal Np/(s N_s): Mss is M_ss whatever Np and s are. pump_scaling = "volume"
 keeps the older reading, the fit as rates (Mss = M_ss, Tb = T_b), where production grows with Np.
 In steady state the target reaches Pt = Mss / (1 + a + b), with
   a = tau_x / T1t            exchange too slow        (tau_x = Nt/G)
@@ -772,11 +773,9 @@ def pumping_effective(P, Np, M_ss, T_b_s, T1p_s):
         out["eta"] = Q0 / (P["Pabs_seal_mW"] * 1e-3 / HNU)
     else:
         s = P["s_dis"]
-    dark = Np / (P["T1_dark_h"] * 3600.0) if P["T1_dark_on"] else 0.0
-    Q0p, Rp = s * Q0, s * R_dis + dark
-    loss = s * Ns / T_b_s + dark        # Q0'/P_lim + R' = s Ns (Gop + 1/T1p) + dark
-    out.update(Ns=Ns, Q0=Q0, R_dis=R_dis, s=s, Q0p=Q0p, Rp=Rp,
-               M_ss_eff=Q0p / loss, T_b_eff=Np / loss, T1p_eff=Np / Rp)
+    k = Np / (s * Ns)                   # pumping-cell atoms per sealed-cell atom of discharge
+    out.update(Ns=Ns, Q0=Q0, R_dis=R_dis, s=s, Q0p=s * Q0, Rp=s * R_dis,
+               M_ss_eff=M_ss, T_b_eff=k * T_b_s, T1p_eff=k * T1p_s)     # Q0'/P_lim + R' = s Ns (Gop + 1/T1p) = s Ns/T_b
     return out
 
 
@@ -1185,7 +1184,7 @@ DEFAULTS = dict(
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
-    pump_scaling="flux", V_seal_cc=49.0, s_dis=1.0, T1_dark_on=False, T1_dark_h=10.0,
+    pump_scaling="flux", V_seal_cc=49.0, s_dis=1.0,
     Pabs_on=False, Pabs_seal_mW=200.0, Pabs_mW=200.0,
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,
