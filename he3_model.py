@@ -388,12 +388,14 @@ def expm2(A, t):
             [k * (e1 - e2) * c, k * (e1 * (d - l2) - e2 * (d - l1))]]
 
 
+def ss(A, b):
+    """Steady state of dx/dt = A x + b."""
+    det = A[0][0] * A[1][1] - A[0][1] * A[1][0]
+    return [-(A[1][1] * b[0] - A[0][1] * b[1]) / det, -(-A[1][0] * b[0] + A[0][0] * b[1]) / det]
+
+
 def evolve(rates, P0, t_on, t_end, npts):
     """Piecewise-exact evolution. rates[k] = (A, b) for discharge on / off."""
-    def ss(A, b):
-        det = A[0][0] * A[1][1] - A[0][1] * A[1][0]
-        return [-(A[1][1] * b[0] - A[0][1] * b[1]) / det, -(-A[1][0] * b[0] + A[0][0] * b[1]) / det]
-
     t = [t_end * i / (npts - 1) for i in range(npts)]
     if 0 < t_on < t_end and t_on not in t:
         t.append(t_on)
@@ -626,7 +628,9 @@ def cooler_solve(P):
     return dict(P, Tc=Tc, T_shield=T1, T_engine=Te), th, st, cooler
 
 
-def compute(P):
+def system(P):
+    """Cooler, tubes and exchange: the stage temperatures, G, the atoms in each cell, and the
+    warnings these raise. Everything the rate equations take from the transfer model."""
     P, th, stages, cooler = cooler_solve(P)
     tube, legs, errs, mdot, sol, heat = th
     p = P["p_mbar"] * 100.0
@@ -638,6 +642,48 @@ def compute(P):
 
     Np = n_num(Th, p) * P["V_pump_cc"] * 1e-6
     Nt = n_num(Tc, p) * P["V_target_cc"] * 1e-6
+
+    warnings = list(errs)
+    Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
+    if Re > 50:
+        warnings.append("Reynolds number %.0f at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow." % Re)
+    if cooler["map"]:
+        if not cooler["held"]:
+            cap2 = stages["second"]["capacity"]
+            if cap2 > 0:
+                warnings.append("The PT420 can't hold the target at %.3g K: it gives %.3g W there with %.3g W on the first stage, short of the %.3g W load, so the target runs at %.3g K."
+                                % (cooler["set"], cap2, cooler["Q1"], cooler["Q2"], Tc))
+            else:
+                warnings.append("The PT420 can't reach %.3g K with %.3g W on the first stage, so the target runs at %.3g K."
+                                % (cooler["set"], cooler["Q1"], Tc))
+    else:
+        for name, stage, T_free in (("Second", stages["second"], cooler["T2_free"]), ("First", stages["first"], cooler["T1_free"])):
+            if stage["total"] > stage["capacity"]:
+                if stage["capacity"] > 0:
+                    warnings.append("%s-stage load of %.3g W exceeds the PT420's %.3g W at %.3g K; with these loads it settles at %.3g K."
+                                    % (name, stage["total"], stage["capacity"], stage["T"], T_free))
+                else:
+                    warnings.append("The PT420 can't reach %.3g K on the %s stage with these loads; it settles at %.3g K."
+                                    % (stage["T"], name.lower(), T_free))
+    if cooler["off_map"]:
+        sc = P["cooler_pct"] / 100.0
+        warnings.append("The loads run past the edge of the PT420 chart (%.3g W on the first stage, %.3g W on the second), so the stage temperatures are extrapolated."
+                        % (PT420_Q1[-1] * sc, PT420_Q2[-1] * sc))
+    if P["mode"] == "loop" and not P["engine"] and not P["intercept"]:
+        warnings.append("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.")
+    if P["mode"] == "loop" and mdot < 0:
+        warnings.append("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.")
+    if any(s["clamped"] for s in sol):
+        warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
+    return dict(P=P, tube=tube, legs=legs, mdot=mdot, sol=sol, heat=heat, stages=stages, cooler=cooler,
+                G=G, G_diff=G_diff, G_conv=G_conv, Np=Np, Nt=Nt, Re=Re, warnings=warnings)
+
+
+def compute(P):
+    S = system(P)
+    P, legs, mdot, sol, heat, stages, cooler = S["P"], S["legs"], S["mdot"], S["sol"], S["heat"], S["stages"], S["cooler"]
+    Tc = P["Tc"]
+    G, G_diff, G_conv, Np, Nt, Re = S["G"], S["G_diff"], S["G_conv"], S["Np"], S["Nt"], S["Re"]
 
     Mss = P["M_ss"] / 100.0
     g_b = 1.0 / P["T_b_s"]
@@ -686,39 +732,6 @@ def compute(P):
                  t_peak=t_peak, P_peak=a_s * math.exp(-rs * t_peak) + a_l * math.exp(-rl * t_peak),
                  late_ratio=a_l / amp_zero["a_lt"])
 
-    warnings = list(errs)
-    Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
-    if Re > 50:
-        warnings.append("Reynolds number %.0f at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow." % Re)
-    if cooler["map"]:
-        if not cooler["held"]:
-            cap2 = stages["second"]["capacity"]
-            if cap2 > 0:
-                warnings.append("The PT420 can't hold the target at %.3g K: it gives %.3g W there with %.3g W on the first stage, short of the %.3g W load, so the target runs at %.3g K."
-                                % (cooler["set"], cap2, cooler["Q1"], cooler["Q2"], Tc))
-            else:
-                warnings.append("The PT420 can't reach %.3g K with %.3g W on the first stage, so the target runs at %.3g K."
-                                % (cooler["set"], cooler["Q1"], Tc))
-    else:
-        for name, stage, T_free in (("Second", stages["second"], cooler["T2_free"]), ("First", stages["first"], cooler["T1_free"])):
-            if stage["total"] > stage["capacity"]:
-                if stage["capacity"] > 0:
-                    warnings.append("%s-stage load of %.3g W exceeds the PT420's %.3g W at %.3g K; with these loads it settles at %.3g K."
-                                    % (name, stage["total"], stage["capacity"], stage["T"], T_free))
-                else:
-                    warnings.append("The PT420 can't reach %.3g K on the %s stage with these loads; it settles at %.3g K."
-                                    % (stage["T"], name.lower(), T_free))
-    if cooler["off_map"]:
-        sc = P["cooler_pct"] / 100.0
-        warnings.append("The loads run past the edge of the PT420 chart (%.3g W on the first stage, %.3g W on the second), so the stage temperatures are extrapolated."
-                        % (PT420_Q1[-1] * sc, PT420_Q2[-1] * sc))
-    if P["mode"] == "loop" and not P["engine"] and not P["intercept"]:
-        warnings.append("With no engine and no intercept the two legs are identical, so nothing drives the loop; the exchange is by diffusion alone.")
-    if P["mode"] == "loop" and mdot < 0:
-        warnings.append("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.")
-    if any(s["clamped"] for s in sol):
-        warnings.append("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.")
-
     return dict(
         ok=True,
         engine="python",
@@ -743,7 +756,7 @@ def compute(P):
         t_h=[x / 3600.0 for x in t], P_pump=pp, P_target=pt,
         paper=paper,
         zero_t_s=tz, zero_P_pump=zp, zero_P_target=zt, shut_P_pump=sp, shut_P_target=st,
-        warnings=warnings,
+        warnings=S["warnings"],
     )
 
 
@@ -752,6 +765,7 @@ def run(params_json):
         return json.dumps(compute(json.loads(params_json)))
     except Exception as e:  # report, don't crash the page
         return json.dumps(dict(ok=False, error="%s: %s" % (type(e).__name__, e)))
+
 
 
 DEFAULTS = dict(

@@ -332,36 +332,13 @@
     return [Object.assign({}, P, { Tc, T_shield: T1, T_engine: Te }), th, st, cooler];
   }
 
-  function compute(P0) {
+  // cooler, tubes and exchange: everything the rate equations take from the transfer model
+  function system(P0) {
     const [P, th, stages, cooler] = cooler_solve(P0);
     const [tube, legs, errs, mdot, sol, heat] = th;
     const p = P.p_mbar * 100, Tc = P.Tc, Th = P.Th;
     const G_diff = sol.reduce((s, x) => s + 1 / x.R_diff, 0), G_conv = Math.abs(mdot) / M_ATOM, G = G_diff + G_conv;
     const Np = n_num(Th, p) * P.V_pump_cc * 1e-6, Nt = n_num(Tc, p) * P.V_target_cc * 1e-6;
-    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
-    const kp = G / Np, kt = G / Nt;
-    const A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]];
-    const rates = { on: [A_on, [g_b * Mss, 0]], off: [A_on, [g_b * Mss, 0]] };
-    const t_on = P.on_h * 3600;
-    const [t, pp, pt, ss_on] = evolve(rates, [0, 0], t_on, t_on, 361);
-    let t90 = null; const target = 0.9 * ss_on[1];
-    const pt_at = tt => evolve(rates, [0, 0], 1e30, tt, 2)[2][1];
-    if (ss_on[1] > 0) {
-      let lo = 0, hi = 1;
-      while (pt_at(hi) < target && hi < 1e9) hi *= 2;
-      if (hi < 1e9) { for (let i = 0; i < 60; i++) { const mid = 0.5 * (lo + hi); if (pt_at(mid) < target) lo = mid; else hi = mid; } t90 = hi; }
-    }
-    const sys = two_cell(Np, Nt, G, P.tau_p_s, P.T1t_h * 3600);
-    const Mp0 = pp[pp.length - 1], Mt0 = pt[pt.length - 1];
-    const amp_zero = amplitudes(sys, 0, Mt0), amp_shut = amplitudes(sys, Mp0, Mt0);
-    const t_win = Math.max(60, 8 * sys.tau_s), tz = [];
-    for (let i = 0; i <= 360; i++) tz.push(t_win * i / 360);
-    const [zp, zt] = relax_curves(sys, amp_zero, tz), [sp, st] = relax_curves(sys, amp_shut, tz);
-    const rs = 1 / sys.tau_s, rl = 1 / sys.tau_l, a_s = amp_zero.a_s, a_l = amp_zero.a_l;
-    const t_peak = a_s < 0 && 0 < a_l ? Math.log(-rs * a_s / (rl * a_l)) / (rs - rl) : 0;
-    const { A: _A, ...paper } = sys;
-    Object.assign(paper, { Mp0, Mt0, zeroed: amp_zero, shuttered: amp_shut, t_peak,
-      P_peak: a_s * Math.exp(-rs * t_peak) + a_l * Math.exp(-rl * t_peak), late_ratio: a_l / amp_zero.a_lt });
     const warnings = errs.slice(), Re = 4 * Math.abs(mdot) / (Math.PI * tube.d * eta(Tc));
     if (Re > 50) warnings.push(`Reynolds number ${Re.toFixed(0)} at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow.`);
     const g3 = v => String(+v.toPrecision(3));
@@ -388,6 +365,37 @@
     if (P.mode === "loop" && mdot < 0)
       warnings.push("The loop runs backwards: the riser ends up colder and denser than the downcomer, so gas flows down the riser and up the downcomer.");
     if (sol.some(s => s.clamped)) warnings.push("Flow is strong enough to flatten a free section's temperature profile; treat these results as rough.");
+    return { P, tube, legs, mdot, sol, heat, stages, cooler, G, G_diff, G_conv, Np, Nt, Re, warnings };
+  }
+
+  function compute(P0) {
+    const S = system(P0), { P, legs, mdot, sol, heat, stages, cooler, G, G_diff, G_conv, Np, Nt, Re } = S;
+    const Tc = P.Tc;
+    const Mss = P.M_ss / 100, g_b = 1 / P.T_b_s, g_t = 1 / (P.T1t_h * 3600);
+    const kp = G / Np, kt = G / Nt;
+    const A_on = [[-(g_b + kp), kp], [kt, -(kt + g_t)]];
+    const rates = { on: [A_on, [g_b * Mss, 0]], off: [A_on, [g_b * Mss, 0]] };
+    const t_on = P.on_h * 3600;
+    const [t, pp, pt, ss_on] = evolve(rates, [0, 0], t_on, t_on, 361);
+    let t90 = null; const target = 0.9 * ss_on[1];
+    const pt_at = tt => evolve(rates, [0, 0], 1e30, tt, 2)[2][1];
+    if (ss_on[1] > 0) {
+      let lo = 0, hi = 1;
+      while (pt_at(hi) < target && hi < 1e9) hi *= 2;
+      if (hi < 1e9) { for (let i = 0; i < 60; i++) { const mid = 0.5 * (lo + hi); if (pt_at(mid) < target) lo = mid; else hi = mid; } t90 = hi; }
+    }
+    const sys = two_cell(Np, Nt, G, P.tau_p_s, P.T1t_h * 3600);
+    const Mp0 = pp[pp.length - 1], Mt0 = pt[pt.length - 1];
+    const amp_zero = amplitudes(sys, 0, Mt0), amp_shut = amplitudes(sys, Mp0, Mt0);
+    const t_win = Math.max(60, 8 * sys.tau_s), tz = [];
+    for (let i = 0; i <= 360; i++) tz.push(t_win * i / 360);
+    const [zp, zt] = relax_curves(sys, amp_zero, tz), [sp, st] = relax_curves(sys, amp_shut, tz);
+    const rs = 1 / sys.tau_s, rl = 1 / sys.tau_l, a_s = amp_zero.a_s, a_l = amp_zero.a_l;
+    const t_peak = a_s < 0 && 0 < a_l ? Math.log(-rs * a_s / (rl * a_l)) / (rs - rl) : 0;
+    const { A: _A, ...paper } = sys;
+    Object.assign(paper, { Mp0, Mt0, zeroed: amp_zero, shuttered: amp_shut, t_peak,
+      P_peak: a_s * Math.exp(-rs * t_peak) + a_l * Math.exp(-rl * t_peak), late_ratio: a_l / amp_zero.a_lt });
+    const warnings = S.warnings;
     return {
       ok: true, engine: "javascript", mdot_mg_h: mdot * 3.6e9, Re, G, G_diff, G_conv, Np, Nt,
       N_tubes: sol.reduce((s, x) => s + x.N_tube, 0), tau_x_target_s: Nt / G, tau_x_pump_s: Np / G,
