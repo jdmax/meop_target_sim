@@ -39,11 +39,11 @@ T1p its relaxation with the discharge on and the laser off. The fit is read as f
   P_lim = M_ss/(Gop T_b),  Gop = 1/T_b - 1/T1p.
 At high field the discharge, and the pump light matched to it, fill a thin layer at the
 walls, and diffusion spreads polarization through the rest of the pumping cell in well
-under a second. So both fluxes are set by the discharge and the absorbed light, not by the
-pumping cell's volume:
-  Np dPp/dt = Q0' (1 - Pp/P_lim) - R' Pp - G (Pp - Pt),   Q0' = s_light Q0,  R' = s_dis R_dis + Np/T1_dark
-which is the form above with 1/Tb = (Q0'/P_lim + R')/Np, Mss = Q0'/(Q0'/P_lim + R'), tau_p = Np/R'.
-With s_light = s_dis and no dark relaxation, Mss = M_ss whatever Np is. pump_scaling = "volume"
+under a second. So both fluxes are set by the discharge, not by the pumping cell's volume. The
+light is taken to keep up with the discharge, so both scale with its size relative to the sealed cell, s:
+  Np dPp/dt = Q0' (1 - Pp/P_lim) - R' Pp - G (Pp - Pt),   Q0' = s Q0,  R' = s R_dis + Np/T1_dark
+which is the form above with 1/Tb = (Q0'/P_lim + R')/Np = (s N_s/T_b + Np/T1_dark)/Np,
+Mss = Q0'/(Q0'/P_lim + R'), tau_p = Np/R'. With no dark relaxation, Mss = M_ss whatever Np is. pump_scaling = "volume"
 keeps the older reading, the fit as rates (Mss = M_ss, Tb = T_b), where production grows with Np.
 In steady state the target reaches Pt = Mss / (1 + a + b), with
   a = tau_x / T1t            exchange too slow        (tau_x = Nt/G)
@@ -757,27 +757,25 @@ def system(P):
 def pumping_effective(P, Np, M_ss, T_b_s, T1p_s):
     """A sealed-cell fit (M_ss as a fraction, T_b, and T1p with the discharge on and the laser off) as fluxes,
     and the effective M_ss, T_b and T1p of a pumping cell of Np atoms that the rate equations take.
-    In flux mode the optical production Q0' and the relaxation R' are set by the discharge and the absorbed light;
-    in volume mode the fit is used as it stands, so production grows with Np."""
+    In flux mode the optical production Q0' and the relaxation R' are set by the discharge, with the light taken to
+    keep up with it, so both scale by s; in volume mode the fit is used as it stands, so production grows with Np."""
     g_op = 1.0 / T_b_s - 1.0 / T1p_s
     out = dict(mode=P["pump_scaling"], g_op=g_op, P_lim=M_ss / (g_op * T_b_s) if g_op > 0 else None, eta=None)
     if P["pump_scaling"] == "volume":
-        out.update(Ns=None, Q0=None, R_dis=None, s_light=None, Q0p=Np * M_ss / T_b_s, Rp=Np / T1p_s,
+        out.update(Ns=None, Q0=None, R_dis=None, s=None, Q0p=Np * M_ss / T_b_s, Rp=Np / T1p_s,
                    M_ss_eff=M_ss, T_b_eff=T_b_s, T1p_eff=T1p_s)
         return out
     Ns = n_num(P["Th"], P["p_mbar"] * 100.0) * P["V_seal_cc"] * 1e-6
     Q0, R_dis = Ns * M_ss / T_b_s, Ns / T1p_s
-    if P["Pabs_on"]:                    # the light from the absorbed pump power, with and without the discharge
-        s_light = P["Pabs_mW"] / P["Pabs_seal_mW"]
+    if P["Pabs_on"]:                    # s from the absorbed pump power, which keeps up with the discharge
+        s = P["Pabs_mW"] / P["Pabs_seal_mW"]
         out["eta"] = Q0 / (P["Pabs_seal_mW"] * 1e-3 / HNU)
     else:
-        s_light = P["s_light"]
-    Q0p = s_light * Q0
-    Rp = P["s_dis"] * R_dis + (Np / (P["T1_dark_h"] * 3600.0) if P["T1_dark_on"] else 0.0)
-    loss = s_light * Ns * g_op + Rp     # Q0'/P_lim + R', written with Gop so that it holds for Gop <= 0 too
-    if loss <= 0:
-        raise ValueError("with T1p shorter than T_b, the light outruns the discharge relaxation and nothing limits the polarization; check T_b and T1p")
-    out.update(Ns=Ns, Q0=Q0, R_dis=R_dis, s_light=s_light, Q0p=Q0p, Rp=Rp,
+        s = P["s_dis"]
+    dark = Np / (P["T1_dark_h"] * 3600.0) if P["T1_dark_on"] else 0.0
+    Q0p, Rp = s * Q0, s * R_dis + dark
+    loss = s * Ns / T_b_s + dark        # Q0'/P_lim + R' = s Ns (Gop + 1/T1p) + dark
+    out.update(Ns=Ns, Q0=Q0, R_dis=R_dis, s=s, Q0p=Q0p, Rp=Rp,
                M_ss_eff=Q0p / loss, T_b_eff=Np / loss, T1p_eff=Np / Rp)
     return out
 
@@ -790,9 +788,6 @@ def pumping_warnings(P, pe):
     if pe["eta"] is not None and pe["eta"] > 2.0:
         out.append("The sealed-cell fit gives %.3g polarized atoms per absorbed photon, N_s M_ss/T_b over P_abs/(h nu), more than the 2 a photon can carry: the absorbed power or the sealed-cell volume is off."
                    % pe["eta"])
-    if pe["P_lim"] is not None and pe["M_ss_eff"] > pe["P_lim"]:
-        out.append("The pumping cell's M_ss (%.3g%%) is above P_lim (%.3g%%), which the flux form can't give; check the inputs."
-                   % (100.0 * pe["M_ss_eff"], 100.0 * pe["P_lim"]))
     if pe["T_b_eff"] > P["on_h"] * 3600.0:
         out.append("The pumping cell's build-up time T_b' = %.3g h is longer than the %.3g h run: the discharge can't fill a pumping cell this large in that time."
                    % (pe["T_b_eff"] / 3600.0, P["on_h"]))
@@ -1190,7 +1185,7 @@ DEFAULTS = dict(
     intercept=True, T_int=45.0, s_int_cm=4.0,
     V_pump_cc=49.0, V_target_cc=100.0,
     M_ss=50.0, T_b_s=150.0, tau_p_s=600.0, T1t_h=10.0,
-    pump_scaling="flux", V_seal_cc=49.0, s_light=1.0, s_dis=1.0, T1_dark_on=False, T1_dark_h=10.0,
+    pump_scaling="flux", V_seal_cc=49.0, s_dis=1.0, T1_dark_on=False, T1_dark_h=10.0,
     Pabs_on=False, Pabs_seal_mW=200.0, Pabs_mW=200.0,
     on_h=24.0,
     T_shield=45.0, A_shield_m2=0.5, eps_shield=0.003, other1_W=0.0,

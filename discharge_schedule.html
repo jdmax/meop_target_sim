@@ -385,7 +385,7 @@ const DEFAULTS = {
   intercept: true, T_int: 45, s_int_cm: 4,
   V_pump_cc: 49, V_target_cc: 100,
   M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
-  pump_scaling: "flux", V_seal_cc: 49, s_light: 1, s_dis: 1, T1_dark_on: false, T1_dark_h: 10,
+  pump_scaling: "flux", V_seal_cc: 49, s_dis: 1, T1_dark_on: false, T1_dark_h: 10,
   Pabs_on: false, Pabs_seal_mW: 200, Pabs_mW: 200,
   on_h: 24,
   T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
@@ -410,7 +410,7 @@ const LEVEL_FIELDS = [
   { key: "T1p_s", min: 0.1, max: 1e7 },
 ];
 // the pumping-cell scaling: rows that only flux mode uses
-const FLUX_KEYS = ["V_seal_cc", "s_light", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW", "T1_dark_on", "T1_dark_h"];
+const FLUX_KEYS = ["V_seal_cc", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW", "T1_dark_on", "T1_dark_h"];
 const DEFS = [
   { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
@@ -430,9 +430,8 @@ const DEFS = [
   { fs: "relax", key: "T1t_h", label: "Target-cell T_1 (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
   { fs: "scale", key: "pump_scaling", label: "Pumping scales with", choice: [["flux", "Absorbed light"], ["volume", "Cell volume"]] },
   { fs: "scale", key: "V_seal_cc", label: "Sealed-cell volume (where the levels were measured)", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
-  { fs: "scale", key: "s_light", label: "Absorbed photon flux, relative to the sealed cell", unit: "×", min: 0.1, max: 10, log: true, dp: 2 },
-  { fs: "scale", key: "s_dis", label: "Discharge volume, relative to the sealed cell", unit: "×", min: 0.1, max: 10, log: true, dp: 2 },
-  { fs: "scale", key: "Pabs_on", label: "Photon flux from the absorbed pump power", toggle: true },
+  { fs: "scale", key: "s_dis", label: "Discharge, relative to the sealed cell (s)", unit: "×", min: 0.1, max: 10, log: true, dp: 2 },
+  { fs: "scale", key: "Pabs_on", label: "s from the absorbed pump power", toggle: true },
   { fs: "scale", key: "Pabs_seal_mW", label: "Absorbed power, sealed cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
   { fs: "scale", key: "Pabs_mW", label: "Absorbed power, pumping cell", unit: "mW", min: 1, max: 5000, log: true, dp: 1 },
   { fs: "scale", key: "T1_dark_on", label: "Gas outside the discharge relaxes", toggle: true },
@@ -550,7 +549,7 @@ function syncInputs() {
   const flux = params.pump_scaling === "flux";
   FLUX_KEYS.forEach(k => { const it = inputs[k]; (it.cb ? it.cb.closest(".toggle") : it.num.closest(".row")).hidden = !flux; });
   ["Pabs_seal_mW", "Pabs_mW"].forEach(k => { inputs[k].num.closest(".row").hidden = !flux || !params.Pabs_on; });
-  inputs.s_light.num.disabled = inputs.s_light.rng.disabled = !!params.Pabs_on;     // the absorbed powers set it
+  inputs.s_dis.num.disabled = inputs.s_dis.rng.disabled = !!params.Pabs_on;     // the absorbed powers set it
   inputs.T1_dark_h.num.disabled = inputs.T1_dark_h.rng.disabled = !params.T1_dark_on;
   $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
   $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
@@ -751,8 +750,8 @@ function show(res, source) {
   markPlaceholders();
   const pe0 = R.levels[0].pump_eff;
   $("scaleHint").innerHTML = pe0.mode === "flux"
-    ? richHTML("Each level's fit is read as fluxes, which the discharge and the light it absorbs set, scaled by s_light" +
-        (params.Pabs_on ? ` = P_abs/P_{abs,seal} = ${pe0.s_light.toPrecision(3)}` : "") + " and s_dis. " +
+    ? richHTML("Each level's fit is read as fluxes, which the discharge sets, with the pump light taken to keep up with it, scaled by s" +
+        (params.Pabs_on ? ` = P_abs/P_{abs,seal} = ${pe0.s.toPrecision(3)}` : "") + ". " +
         (params.T1_dark_on ? "Gas outside the discharge relaxes too, so a bigger pumping cell lowers the steady state."
           : "The rest of the pumping cell only shares polarization by diffusion, so its size sets the build-up time but not the steady state."))
     : "Each level's fit is taken as rates, so production grows with the pumping-cell volume. With the discharge in a thin layer at the walls, the absorbed light sets production instead.";

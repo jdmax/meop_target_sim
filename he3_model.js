@@ -423,23 +423,23 @@
   }
 
   // A sealed-cell fit (M_ss as a fraction, T_b, T1p) as fluxes, and the effective M_ss, T_b and T1p of a pumping
-  // cell of Np atoms. Flux mode: production and relaxation set by the discharge and the absorbed light; volume mode: the fit as it stands.
+  // cell of Np atoms. Flux mode: production and relaxation set by the discharge, the light keeping up with it; volume mode: the fit as it stands.
   function pumping_effective(P, Np, M_ss, T_b_s, T1p_s) {
     const g_op = 1 / T_b_s - 1 / T1p_s;
     const out = { mode: P.pump_scaling, g_op, P_lim: g_op > 0 ? M_ss / (g_op * T_b_s) : null, eta: null };
     if (P.pump_scaling === "volume")
-      return Object.assign(out, { Ns: null, Q0: null, R_dis: null, s_light: null, Q0p: Np * M_ss / T_b_s, Rp: Np / T1p_s,
+      return Object.assign(out, { Ns: null, Q0: null, R_dis: null, s: null, Q0p: Np * M_ss / T_b_s, Rp: Np / T1p_s,
         M_ss_eff: M_ss, T_b_eff: T_b_s, T1p_eff: T1p_s });
     const Ns = n_num(P.Th, P.p_mbar * 100) * P.V_seal_cc * 1e-6, Q0 = Ns * M_ss / T_b_s, R_dis = Ns / T1p_s;
-    let s_light;
-    if (P.Pabs_on) {                  // the light from the absorbed pump power, with and without the discharge
-      s_light = P.Pabs_mW / P.Pabs_seal_mW;
+    let s;
+    if (P.Pabs_on) {                  // s from the absorbed pump power, which keeps up with the discharge
+      s = P.Pabs_mW / P.Pabs_seal_mW;
       out.eta = Q0 / (P.Pabs_seal_mW * 1e-3 / HNU);
-    } else s_light = P.s_light;
-    const Q0p = s_light * Q0, Rp = P.s_dis * R_dis + (P.T1_dark_on ? Np / (P.T1_dark_h * 3600) : 0);
-    const loss = s_light * Ns * g_op + Rp;     // Q0'/P_lim + R', written with Gop so that it holds for Gop <= 0 too
-    if (loss <= 0) throw new Error("with T1p shorter than T_b, the light outruns the discharge relaxation and nothing limits the polarization; check T_b and T1p");
-    return Object.assign(out, { Ns, Q0, R_dis, s_light, Q0p, Rp, M_ss_eff: Q0p / loss, T_b_eff: Np / loss, T1p_eff: Np / Rp });
+    } else s = P.s_dis;
+    const dark = P.T1_dark_on ? Np / (P.T1_dark_h * 3600) : 0;
+    const Q0p = s * Q0, Rp = s * R_dis + dark;
+    const loss = s * Ns / T_b_s + dark;        // Q0'/P_lim + R' = s Ns (Gop + 1/T1p) + dark
+    return Object.assign(out, { Ns, Q0, R_dis, s, Q0p, Rp, M_ss_eff: Q0p / loss, T_b_eff: Np / loss, T1p_eff: Np / Rp });
   }
   // what pumping_effective()'s result says about the inputs, in flux mode
   function pumping_warnings(P, pe) {
@@ -447,8 +447,6 @@
     const out = [], g3 = v => String(+v.toPrecision(3));
     if (pe.eta !== null && pe.eta > 2)
       out.push(`The sealed-cell fit gives ${g3(pe.eta)} polarized atoms per absorbed photon, N_s M_ss/T_b over P_abs/(h nu), more than the 2 a photon can carry: the absorbed power or the sealed-cell volume is off.`);
-    if (pe.P_lim !== null && pe.M_ss_eff > pe.P_lim)
-      out.push(`The pumping cell's M_ss (${g3(100 * pe.M_ss_eff)}%) is above P_lim (${g3(100 * pe.P_lim)}%), which the flux form can't give; check the inputs.`);
     if (pe.T_b_eff > P.on_h * 3600)
       out.push(`The pumping cell's build-up time T_b' = ${g3(pe.T_b_eff / 3600)} h is longer than the ${g3(P.on_h)} h run: the discharge can't fill a pumping cell this large in that time.`);
     return out;
