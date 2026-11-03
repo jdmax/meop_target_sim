@@ -767,6 +767,291 @@ def run(params_json):
         return json.dumps(dict(ok=False, error="%s: %s" % (type(e).__name__, e)))
 
 
+# ------------------------------------------------------------------ discharge schedule
+# Each discharge level d is a sealed-cell pair (M_ss,d, T_b,d), so its net production per
+# pumping-cell atom is the straight line f_d(P) = (M_ss,d - P)/T_b,d = a_d - s_d P.
+# A discharge-on T1p only splits it: f_d = Gop (Plim - P) - P/T1p with Gop = 1/T_b - 1/T1p and
+# Gop Plim = M_ss/T_b, so it leaves f_d, and the dynamics, unchanged.
+# Within a level the rate equations are those of compute(), solved exactly; levels change at
+# events, each located by scanning the exact solution and bisecting the first bracket.
+
+SYSTEM_KEYS = ("mode", "p_mbar", "Tc", "Th", "id_mm", "wall_mm", "length_cm",
+               "engine", "engine_stage", "engine_cm", "gap_cm", "T_engine",
+               "intercept", "T_int", "s_int_cm", "V_pump_cc", "V_target_cc",
+               "T_shield", "A_shield_m2", "eps_shield", "other1_W",
+               "A_cold_cm2", "eps_cold", "other2_mW", "cooler_map", "cooler_pct")
+SCAN_N = 2000            # steps across the horizon when looking for an event
+HORIZON_TAU = 20.0       # the horizon covers this many slow time constants of the slowest level
+TAIL_TAU = 40.0          # a level left on for good is searched this many slow time constants out
+MAX_SWITCHES = 200
+_sys_memo = [None, None]
+
+
+def system_cached(P):
+    """system() for the inputs that set it; the schedule page reruns often with only the levels changed."""
+    sp = {k: P[k] for k in SYSTEM_KEYS}
+    key = json.dumps(sp, sort_keys=True)
+    if _sys_memo[0] != key:
+        _sys_memo[1] = system(sp)
+        _sys_memo[0] = key
+    return _sys_memo[1]
+
+
+def advance(A, xs, x0, dt):
+    """Exact solution of dx/dt = A (x - xs), from x0, after dt."""
+    E = expm2(A, dt)
+    d0 = [x0[0] - xs[0], x0[1] - xs[1]]
+    return [xs[0] + E[0][0] * d0[0] + E[0][1] * d0[1], xs[1] + E[1][0] * d0[0] + E[1][1] * d0[1]]
+
+
+def first_time(g, t0, t1, dt):
+    """First time in [t0, t1] where g(t) > 0: scan in steps of about dt, then bisect the first bracket."""
+    if g(t0) > 0:
+        return t0
+    n = max(1, int(math.ceil((t1 - t0) / dt)))
+    lo = t0
+    for k in range(1, n + 1):
+        hi = t0 + (t1 - t0) * k / n
+        if g(hi) > 0:
+            for _ in range(200):
+                mid = 0.5 * (lo + hi)
+                if mid <= lo or mid >= hi:
+                    break
+                if g(mid) > 0:
+                    hi = mid
+                else:
+                    lo = mid
+            return hi
+        lo = hi
+    return None
+
+
+def fmt4(v):
+    """A number to four decimals, trailing zeros dropped (written the same way by the JS port)."""
+    return ("%.4f" % v).rstrip("0").rstrip(".")
+
+
+def level_rates(G, Np, Nt, g_t, lv):
+    """A and b of compute()'s rate equations with discharge level lv on."""
+    g_b = 1.0 / lv["T_b_s"]
+    kp, kt = G / Np, G / Nt
+    return [[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * (lv["M_ss"] / 100.0), 0.0]
+
+
+def crossover(a, s, i, j):
+    """Polarization where f_i and f_j cross, or None for parallel lines."""
+    if s[i] == s[j]:
+        return None
+    return (a[i] - a[j]) / (s[i] - s[j])
+
+
+def envelope(a, s, P_max):
+    """Upper envelope of the lines f_d = a_d - s_d P over [0, P_max]: [[P_from, P_to, level], ...]."""
+    n = len(a)
+    c = 0
+    for d in range(1, n):
+        if a[d] > a[c] or (a[d] == a[c] and s[d] < s[c]):
+            c = d
+    pieces, P0 = [], 0.0
+    while True:
+        best, nd = None, None
+        for d in range(n):
+            if d == c or s[d] >= s[c]:
+                continue
+            x = crossover(a, s, c, d)
+            if x > P0 and (best is None or x < best or (x == best and s[d] < s[nd])):
+                best, nd = x, d
+        if best is None or best >= P_max:
+            pieces.append([P0, P_max, c])
+            return pieces
+        pieces.append([P0, best, c])
+        P0, c = best, nd
+
+
+def schedule(Np, Nt, G, T1t_s, levels, S):
+    """Build-up from zero under a discharge schedule. levels: [{label, M_ss %, T_b_s, T1p_s}];
+    S: sched_mode ("single", "switch" or "envelope") and its settings, the goal and on_h."""
+    if not levels:
+        raise ValueError("no discharge levels")
+    n = len(levels)
+    g_t = 1.0 / T1t_s
+    N = Np + Nt
+    alpha, beta = Np / N, (Nt / N) * g_t
+    L = []
+    for lv in levels:
+        A, b = level_rates(G, Np, Nt, g_t, lv)
+        L.append(dict(A=A, xs=ss(A, b), times=eig_times(A)))
+    a = [level_rates(G, Np, Nt, g_t, lv)[1][0] for lv in levels]      # f_d(0) = M_ss/T_b
+    s = [1.0 / lv["T_b_s"] for lv in levels]                          # -df_d/dP = 1/T_b
+    span = S["on_h"] * 3600.0
+    T_h = max(span, HORIZON_TAU * max(l["times"][0] for l in L))
+    dt = T_h / SCAN_N
+    warnings = []
+
+    def state(segs, t):
+        k = len(segs) - 1
+        while k > 0 and segs[k]["t0"] > t:
+            k -= 1
+        sg = segs[k]
+        l = L[sg["level"]]
+        return advance(l["A"], l["xs"], sg["x0"], t - sg["t0"])
+
+    def seg(t0, d, x0):
+        return dict(t0=t0, level=d, x0=x0)
+
+    def pp_on(sg):
+        l = L[sg["level"]]
+        return lambda t: advance(l["A"], l["xs"], sg["x0"], t - sg["t0"])
+
+    def goal_time(segs, goal):
+        """First time the target reaches the goal, or None."""
+        for k, sg in enumerate(segs):
+            t1 = segs[k + 1]["t0"] if k + 1 < len(segs) else sg["t0"] + TAIL_TAU * L[sg["level"]]["times"][0]
+            x_at = pp_on(sg)
+            t = first_time(lambda tt: x_at(tt)[1] - goal, sg["t0"], t1, dt)
+            if t is not None:
+                return t
+        return None
+
+    # the schedule
+    mode = S["sched_mode"]
+    P_sw = None
+    clamp = lambda i: min(n - 1, max(0, int(i)))
+    if mode == "single":
+        segs = [seg(0.0, clamp(S["single_level"]), [0.0, 0.0])]
+    elif mode == "switch":
+        e, l = clamp(S["early_level"]), clamp(S["late_level"])
+        segs = [seg(0.0, e, [0.0, 0.0])]
+        t_sw = None
+        if e != l:
+            if S["trigger"] == "t":
+                t_sw = S["t_switch_h"] * 3600.0
+            else:
+                if S["trigger"] == "P":
+                    P_sw = S["P_switch"] / 100.0
+                elif a[e] - a[l] <= 0:
+                    P_sw = 0.0                          # the late level is better from the start
+                elif s[e] > s[l]:
+                    P_sw = crossover(a, s, e, l)
+                if P_sw is not None:
+                    x_at = pp_on(segs[0])
+                    t_sw = first_time(lambda t: x_at(t)[0] - P_sw, 0.0, T_h, dt) if P_sw > 0 else 0.0
+        if t_sw is not None:
+            segs = [seg(0.0, l, [0.0, 0.0])] if t_sw <= 0 else segs + [seg(t_sw, l, state(segs, t_sw))]
+    elif mode == "envelope":
+        h = S["hyst_pct"] / 100.0
+        dwell = S["dwell_min"] * 60.0
+        c = envelope(a, s, 1.0)[0][2]
+        segs = [seg(0.0, c, [0.0, 0.0])]
+
+        def gain(c, Pp):
+            """Best margin of another level over c at Pp, less the hysteresis, and that level."""
+            best, bd = None, None
+            for d in range(n):
+                if d == c:
+                    continue
+                v = (a[d] - s[d] * Pp) - (a[c] - s[c] * Pp) - h * abs(s[d] - s[c])
+                if best is None or v > best:
+                    best, bd = v, d
+            return best, bd
+        while n > 1:
+            sg = segs[-1]
+            t_a = sg["t0"] + dwell
+            if t_a >= T_h:
+                break
+            x_at = pp_on(sg)
+            t_sw = first_time(lambda t: gain(sg["level"], x_at(t)[0])[0], t_a, T_h, dt)
+            if t_sw is None:
+                break
+            if len(segs) > MAX_SWITCHES:
+                warnings.append("The envelope schedule switched more than %d times; add hysteresis or a minimum dwell." % MAX_SWITCHES)
+                break
+            x = x_at(t_sw)
+            segs.append(seg(t_sw, gain(sg["level"], x[0])[1], x))
+    else:
+        raise ValueError("unknown schedule mode %r" % mode)
+
+    # each level on its own, and the goal
+    best_ss = max(l["xs"][1] for l in L)
+    goal = S["goal_frac"] / 100.0 * best_ss if S["goal_mode"] == "frac" else S["goal_pct"] / 100.0
+    t_grid = [span * i / 360 for i in range(361)]
+    out_levels, single_p, single_t = [], [], []
+    for d, (lv, l) in enumerate(zip(levels, L)):
+        one = [seg(0.0, d, [0.0, 0.0])]
+        xs = [state(one, t) for t in t_grid]
+        single_p.append([x[0] for x in xs])
+        single_t.append([x[1] for x in xs])
+        g_op = s[d] - 1.0 / lv["T1p_s"]
+        k_sys = alpha * s[d] + beta
+        out_levels.append(dict(
+            label=lv["label"], M_ss=lv["M_ss"], T_b_s=lv["T_b_s"], T1p_s=lv["T1p_s"],
+            f0=a[d], slope=s[d], gamma_op=g_op, P_lim=a[d] / g_op if g_op > 0 else None,
+            x_lim=Np * s[d] / G, k_sys=k_sys, P_sys=alpha * a[d] / k_sys,
+            ss_pump=l["xs"][0], ss_target=l["xs"][1], times_s=l["times"],
+            t_goal_s=goal_time(one, goal)))
+        if g_op <= 0:
+            warnings.append("%s: T1p (%s s) must be longer than the sealed-cell build-up time T_b (%s s), since 1/T_b = Gop + 1/T1p."
+                            % (lv["label"], fmt4(lv["T1p_s"]), fmt4(lv["T_b_s"])))
+        if Np * s[d] / G > 0.2:
+            warnings.append("%s: N_p/(T_b G) = %.2f. The exchange is close to limiting the build-up, so the pumping cell runs ahead of the target "
+                            "and a stronger discharge gains less than its f_d suggests." % (lv["label"], Np * s[d] / G))
+
+    # the schedule's trace, with each switch on the grid
+    switches = [{"t_s": sg["t0"], "from": segs[k]["level"], "to": sg["level"], "P_pump": sg["x0"][0], "P_target": sg["x0"][1]}
+                for k, sg in enumerate(segs[1:])]
+    tt = sorted(set(t_grid) | set(w["t_s"] for w in switches if 0 < w["t_s"] < span))
+    xx = [state(segs, t) for t in tt]
+    t_goal = goal_time(segs, goal)
+    fin = L[segs[-1]["level"]]["xs"]
+    singles = [x["t_goal_s"] for x in out_levels if x["t_goal_s"] is not None]
+    best_t = min(singles) if singles else None
+    if goal > best_ss:
+        warnings.append("No level on its own reaches the goal of %.1f%%: the best steady state is %.1f%%." % (goal * 100, best_ss * 100))
+    elif t_goal is None:
+        warnings.append("The schedule never reaches the goal of %.1f%%; it settles at %.1f%%." % (goal * 100, fin[1] * 100))
+
+    P_max = max(lv["M_ss"] for lv in levels) / 100.0
+    pieces = envelope(a, s, P_max)
+    kinks = [(pieces[k][1], set((pieces[k][2], pieces[k + 1][2]))) for k in range(len(pieces) - 1)]
+    crossings = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            x = crossover(a, s, i, j)
+            if x is not None and 0 < x < P_max:
+                crossings.append(dict(P=x, i=i, j=j, f=a[i] - s[i] * x,
+                                      on_envelope=any(xk == x and pair == set((i, j)) for xk, pair in kinks)))
+
+    return dict(
+        levels=out_levels, goal=goal, best_ss_target=best_ss, horizon_s=T_h,
+        loss_slope=(Nt / Np) * g_t,
+        t_h=[t / 3600.0 for t in t_grid], single_P_pump=single_p, single_P_target=single_t,
+        sched=dict(mode=mode, t_h=[t / 3600.0 for t in tt], P_pump=[x[0] for x in xx], P_target=[x[1] for x in xx],
+                   segments=[dict(t0_s=sg["t0"], t1_s=segs[k + 1]["t0"] if k + 1 < len(segs) else None, level=sg["level"])
+                             for k, sg in enumerate(segs)],
+                   switches=switches, P_switch=P_sw, t_goal_s=t_goal, final_level=segs[-1]["level"],
+                   ss_pump=fin[0], ss_target=fin[1], best_single_s=best_t,
+                   saved=(best_t - t_goal) / best_t if best_t and t_goal is not None else None),
+        envelope=dict(P_max=P_max, pieces=pieces, crossings=crossings),
+        warnings=warnings,
+    )
+
+
+def compute_schedule(P):
+    S = system_cached(P)
+    out = schedule(S["Np"], S["Nt"], S["G"], P["T1t_h"] * 3600.0, P["levels"], P)
+    out.update(ok=True, engine="python", G=S["G"], G_diff=S["G_diff"], G_conv=S["G_conv"], Np=S["Np"], Nt=S["Nt"],
+               Tc=S["P"]["Tc"], T_shield=S["P"]["T_shield"], mdot_mg_h=S["mdot"] * 3.6e9,
+               tau_x_target_s=S["Nt"] / S["G"], tau_x_pump_s=S["Np"] / S["G"],
+               warnings=S["warnings"] + out["warnings"])
+    return out
+
+
+def run_schedule(params_json):
+    try:
+        return json.dumps(compute_schedule(json.loads(params_json)))
+    except Exception as e:  # report, don't crash the page
+        return json.dumps(dict(ok=False, error="%s: %s" % (type(e).__name__, e)))
+
 
 DEFAULTS = dict(
     mode="loop", p_mbar=100.0, Tc=5.0, Th=300.0,
@@ -781,6 +1066,16 @@ DEFAULTS = dict(
     cooler_map=True, cooler_pct=100.0,
 )
 
+# Placeholder discharge levels, to be replaced with measured sealed-cell values: "Low" is the main
+# page's default pumping, "High" a stronger discharge that pumps faster to a lower polarization.
+SCHEDULE_DEFAULTS = dict(
+    levels=[dict(label="Low", M_ss=50.0, T_b_s=150.0, T1p_s=600.0),
+            dict(label="High", M_ss=40.0, T_b_s=60.0, T1p_s=200.0)],
+    sched_mode="switch", single_level=0, early_level=1, late_level=0,
+    trigger="auto", P_switch=20.0, t_switch_h=1.0, hyst_pct=0.0, dwell_min=0.0,
+    goal_mode="frac", goal_pct=30.0, goal_frac=90.0,
+)
+
 if __name__ == "__main__" and __import__("sys").platform != "emscripten":
     import time
     for mode in ("single", "loop"):
@@ -793,3 +1088,7 @@ if __name__ == "__main__" and __import__("sys").platform != "emscripten":
         print("  paper", {k: v for k, v in r["paper"].items()})
         print("  stages", r["stages"])
         print("  cooler", r["cooler"])
+    for sm in ("single", "switch", "envelope"):
+        r = compute_schedule(dict(DEFAULTS, **dict(SCHEDULE_DEFAULTS, sched_mode=sm)))
+        print("schedule", sm, {k: r["sched"][k] for k in ("t_goal_s", "best_single_s", "saved", "P_switch", "switches")},
+              "goal", r["goal"], [(x["label"], x["t_goal_s"], x["ss_target"]) for x in r["levels"]])

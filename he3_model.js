@@ -409,9 +409,196 @@
     };
   }
   function run(json) { try { return JSON.stringify(compute(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }
+
+  // ---------------------------------------------------------------- discharge schedule
+  // Level d pumps with f_d(P) = (M_ss,d - P)/T_b,d = a_d - s_d P; T1p only splits it into Gop and Plim.
+  const SYSTEM_KEYS = ["mode", "p_mbar", "Tc", "Th", "id_mm", "wall_mm", "length_cm",
+    "engine", "engine_stage", "engine_cm", "gap_cm", "T_engine", "intercept", "T_int", "s_int_cm", "V_pump_cc", "V_target_cc",
+    "T_shield", "A_shield_m2", "eps_shield", "other1_W", "A_cold_cm2", "eps_cold", "other2_mW", "cooler_map", "cooler_pct"];
+  const SCAN_N = 2000, HORIZON_TAU = 20, TAIL_TAU = 40, MAX_SWITCHES = 200;
+  let sysMemo = [null, null];
+  function system_cached(P) {
+    const sp = {};
+    SYSTEM_KEYS.forEach(k => { sp[k] = P[k]; });
+    const key = JSON.stringify(SYSTEM_KEYS.slice().sort().map(k => [k, sp[k]]));
+    if (sysMemo[0] !== key) sysMemo = [key, system(sp)];
+    return sysMemo[1];
+  }
+  function advance(A, xs, x0, dt) {
+    const E = expm2(A, dt), d0 = [x0[0] - xs[0], x0[1] - xs[1]];
+    return [xs[0] + E[0][0] * d0[0] + E[0][1] * d0[1], xs[1] + E[1][0] * d0[0] + E[1][1] * d0[1]];
+  }
+  // first time in [t0, t1] where g(t) > 0: scan in steps of about dt, then bisect the first bracket
+  function first_time(g, t0, t1, dt) {
+    if (g(t0) > 0) return t0;
+    const n = Math.max(1, Math.ceil((t1 - t0) / dt));
+    let lo = t0;
+    for (let k = 1; k <= n; k++) {
+      let hi = t0 + (t1 - t0) * k / n;
+      if (g(hi) > 0) {
+        for (let it = 0; it < 200; it++) {
+          const mid = 0.5 * (lo + hi);
+          if (mid <= lo || mid >= hi) break;
+          if (g(mid) > 0) hi = mid; else lo = mid;
+        }
+        return hi;
+      }
+      lo = hi;
+    }
+    return null;
+  }
+  function level_rates(G, Np, Nt, g_t, lv) {
+    const g_b = 1 / lv.T_b_s, kp = G / Np, kt = G / Nt;
+    return [[[-(g_b + kp), kp], [kt, -(kt + g_t)]], [g_b * (lv.M_ss / 100), 0]];
+  }
+  const crossover = (a, s, i, j) => s[i] === s[j] ? null : (a[i] - a[j]) / (s[i] - s[j]);
+  function envelope(a, s, P_max) {
+    const n = a.length;
+    let c = 0;
+    for (let d = 1; d < n; d++) if (a[d] > a[c] || (a[d] === a[c] && s[d] < s[c])) c = d;
+    const pieces = [];
+    let P0 = 0;
+    for (;;) {
+      let best = null, nd = null;
+      for (let d = 0; d < n; d++) {
+        if (d === c || s[d] >= s[c]) continue;
+        const x = crossover(a, s, c, d);
+        if (x > P0 && (best === null || x < best || (x === best && s[d] < s[nd]))) { best = x; nd = d; }
+      }
+      if (best === null || best >= P_max) { pieces.push([P0, P_max, c]); return pieces; }
+      pieces.push([P0, best, c]); P0 = best; c = nd;
+    }
+  }
+
+  function schedule(Np, Nt, G, T1t_s, levels, S) {
+    if (!levels || !levels.length) throw new Error("no discharge levels");
+    const n = levels.length, g_t = 1 / T1t_s, N = Np + Nt, alpha = Np / N, beta = (Nt / N) * g_t;
+    const L = levels.map(lv => { const [A, b] = level_rates(G, Np, Nt, g_t, lv); return { A, xs: ss(A, b), times: eig_times(A) }; });
+    const a = levels.map(lv => level_rates(G, Np, Nt, g_t, lv)[1][0]), s = levels.map(lv => 1 / lv.T_b_s);
+    const span = S.on_h * 3600, T_h = Math.max(span, HORIZON_TAU * Math.max(...L.map(l => l.times[0]))), dt = T_h / SCAN_N;
+    const warnings = [];
+    const seg = (t0, level, x0) => ({ t0, level, x0 });
+    const pp_on = sg => { const l = L[sg.level]; return t => advance(l.A, l.xs, sg.x0, t - sg.t0); };
+    function state(segs, t) {
+      let k = segs.length - 1;
+      while (k > 0 && segs[k].t0 > t) k--;
+      return pp_on(segs[k])(t);
+    }
+    function goal_time(segs, goal) {
+      for (let k = 0; k < segs.length; k++) {
+        const sg = segs[k], t1 = k + 1 < segs.length ? segs[k + 1].t0 : sg.t0 + TAIL_TAU * L[sg.level].times[0];
+        const x_at = pp_on(sg), t = first_time(tt => x_at(tt)[1] - goal, sg.t0, t1, dt);
+        if (t !== null) return t;
+      }
+      return null;
+    }
+
+    // the schedule
+    const mode = S.sched_mode, clamp = i => Math.min(n - 1, Math.max(0, Math.trunc(i)));
+    let P_sw = null, segs;
+    if (mode === "single") segs = [seg(0, clamp(S.single_level), [0, 0])];
+    else if (mode === "switch") {
+      const e = clamp(S.early_level), l = clamp(S.late_level);
+      segs = [seg(0, e, [0, 0])];
+      let t_sw = null;
+      if (e !== l) {
+        if (S.trigger === "t") t_sw = S.t_switch_h * 3600;
+        else {
+          if (S.trigger === "P") P_sw = S.P_switch / 100;
+          else if (a[e] - a[l] <= 0) P_sw = 0;           // the late level is better from the start
+          else if (s[e] > s[l]) P_sw = crossover(a, s, e, l);
+          if (P_sw !== null) {
+            const x_at = pp_on(segs[0]);
+            t_sw = P_sw > 0 ? first_time(t => x_at(t)[0] - P_sw, 0, T_h, dt) : 0;
+          }
+        }
+      }
+      if (t_sw !== null) segs = t_sw <= 0 ? [seg(0, l, [0, 0])] : segs.concat([seg(t_sw, l, state(segs, t_sw))]);
+    } else if (mode === "envelope") {
+      const h = S.hyst_pct / 100, dwell = S.dwell_min * 60;
+      segs = [seg(0, envelope(a, s, 1)[0][2], [0, 0])];
+      const gain = (c, Pp) => {      // best margin of another level over c at Pp, less the hysteresis, and that level
+        let best = null, bd = null;
+        for (let d = 0; d < n; d++) {
+          if (d === c) continue;
+          const v = (a[d] - s[d] * Pp) - (a[c] - s[c] * Pp) - h * Math.abs(s[d] - s[c]);
+          if (best === null || v > best) { best = v; bd = d; }
+        }
+        return [best, bd];
+      };
+      while (n > 1) {
+        const sg = segs[segs.length - 1], t_a = sg.t0 + dwell;
+        if (t_a >= T_h) break;
+        const x_at = pp_on(sg), t_sw = first_time(t => gain(sg.level, x_at(t)[0])[0], t_a, T_h, dt);
+        if (t_sw === null) break;
+        if (segs.length > MAX_SWITCHES) {
+          warnings.push(`The envelope schedule switched more than ${MAX_SWITCHES} times; add hysteresis or a minimum dwell.`);
+          break;
+        }
+        const x = x_at(t_sw);
+        segs.push(seg(t_sw, gain(sg.level, x[0])[1], x));
+      }
+    } else throw new Error(`unknown schedule mode ${mode}`);
+
+    // each level on its own, and the goal
+    const best_ss = Math.max(...L.map(l => l.xs[1]));
+    const goal = S.goal_mode === "frac" ? S.goal_frac / 100 * best_ss : S.goal_pct / 100;
+    const t_grid = []; for (let i = 0; i < 361; i++) t_grid.push(span * i / 360);
+    const out_levels = [], single_p = [], single_t = [];
+    const f4 = v => v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");     // as fmt4() in the Python
+    levels.forEach((lv, d) => {
+      const l = L[d], one = [seg(0, d, [0, 0])], xs = t_grid.map(t => state(one, t));
+      single_p.push(xs.map(x => x[0])); single_t.push(xs.map(x => x[1]));
+      const g_op = s[d] - 1 / lv.T1p_s, k_sys = alpha * s[d] + beta;
+      out_levels.push({ label: lv.label, M_ss: lv.M_ss, T_b_s: lv.T_b_s, T1p_s: lv.T1p_s,
+        f0: a[d], slope: s[d], gamma_op: g_op, P_lim: g_op > 0 ? a[d] / g_op : null,
+        x_lim: Np * s[d] / G, k_sys, P_sys: alpha * a[d] / k_sys,
+        ss_pump: l.xs[0], ss_target: l.xs[1], times_s: l.times, t_goal_s: goal_time(one, goal) });
+      if (g_op <= 0) warnings.push(`${lv.label}: T1p (${f4(lv.T1p_s)} s) must be longer than the sealed-cell build-up time T_b (${f4(lv.T_b_s)} s), since 1/T_b = Gop + 1/T1p.`);
+      if (Np * s[d] / G > 0.2) warnings.push(`${lv.label}: N_p/(T_b G) = ${(Np * s[d] / G).toFixed(2)}. The exchange is close to limiting the build-up, so the pumping cell runs ahead of the target ` +
+        "and a stronger discharge gains less than its f_d suggests.");
+    });
+
+    // the schedule's trace, with each switch on the grid
+    const switches = segs.slice(1).map((sg, k) => ({ t_s: sg.t0, from: segs[k].level, to: sg.level, P_pump: sg.x0[0], P_target: sg.x0[1] }));
+    const tt = [...new Set(t_grid.concat(switches.filter(w => w.t_s > 0 && w.t_s < span).map(w => w.t_s)))].sort((u, v) => u - v);
+    const xx = tt.map(t => state(segs, t));
+    const t_goal = goal_time(segs, goal), fin = L[segs[segs.length - 1].level].xs;
+    const singles = out_levels.map(x => x.t_goal_s).filter(t => t !== null), best_t = singles.length ? Math.min(...singles) : null;
+    if (goal > best_ss) warnings.push(`No level on its own reaches the goal of ${(goal * 100).toFixed(1)}%: the best steady state is ${(best_ss * 100).toFixed(1)}%.`);
+    else if (t_goal === null) warnings.push(`The schedule never reaches the goal of ${(goal * 100).toFixed(1)}%; it settles at ${(fin[1] * 100).toFixed(1)}%.`);
+
+    const P_max = Math.max(...levels.map(lv => lv.M_ss)) / 100, pieces = envelope(a, s, P_max);
+    const kinks = pieces.slice(0, -1).map((p, k) => [p[1], p[2], pieces[k + 1][2]]);
+    const crossings = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const x = crossover(a, s, i, j);
+      if (x !== null && 0 < x && x < P_max)
+        crossings.push({ P: x, i, j, f: a[i] - s[i] * x,
+          on_envelope: kinks.some(([xk, u, v]) => xk === x && ((u === i && v === j) || (u === j && v === i))) });
+    }
+    return {
+      levels: out_levels, goal, best_ss_target: best_ss, horizon_s: T_h, loss_slope: (Nt / Np) * g_t,
+      t_h: t_grid.map(t => t / 3600), single_P_pump: single_p, single_P_target: single_t,
+      sched: { mode, t_h: tt.map(t => t / 3600), P_pump: xx.map(x => x[0]), P_target: xx.map(x => x[1]),
+        segments: segs.map((sg, k) => ({ t0_s: sg.t0, t1_s: k + 1 < segs.length ? segs[k + 1].t0 : null, level: sg.level })),
+        switches, P_switch: P_sw, t_goal_s: t_goal, final_level: segs[segs.length - 1].level,
+        ss_pump: fin[0], ss_target: fin[1], best_single_s: best_t,
+        saved: best_t && t_goal !== null ? (best_t - t_goal) / best_t : null },
+      envelope: { P_max, pieces, crossings },
+      warnings,
+    };
+  }
+  function compute_schedule(P) {
+    const S = system_cached(P), out = schedule(S.Np, S.Nt, S.G, P.T1t_h * 3600, P.levels, P);
+    return Object.assign(out, { ok: true, engine: "javascript", G: S.G, G_diff: S.G_diff, G_conv: S.G_conv, Np: S.Np, Nt: S.Nt,
+      Tc: S.P.Tc, T_shield: S.P.T_shield, mdot_mg_h: S.mdot * 3.6e9, tau_x_target_s: S.Nt / S.G, tau_x_pump_s: S.Np / S.G,
+      warnings: S.warnings.concat(out.warnings) });
+  }
+  function run_schedule(json) { try { return JSON.stringify(compute_schedule(JSON.parse(json))); } catch (e) { return JSON.stringify({ ok: false, error: String(e) }); } }
   const PT420 = { Q1: PT420_Q1, Q2: PT420_Q2, T1: PT420_T1, T2: PT420_T2, map: pt_map, load1: pt_load1, load2: pt_load2 };
   // gas, glass and radiation helpers, for the page's formula section
   const props = { eta, k_gas, n_num, rho, nD, k_glass, disk_view, KB, M_ATOM, CP, SIGMA, ETA_300, ETA_EXP, RHO_D_OVER_ETA };
-  root.He3ModelJS = { run, compute, PT420, props };
-  if (typeof module !== "undefined") module.exports = { run, compute };
+  root.He3ModelJS = { run, compute, run_schedule, compute_schedule, schedule, PT420, props };
+  if (typeof module !== "undefined") module.exports = { run, compute, run_schedule, compute_schedule, schedule };
 })(typeof window !== "undefined" ? window : globalThis);
