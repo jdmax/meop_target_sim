@@ -555,7 +555,7 @@
         x_lim: Np * s[d] / G, k_sys, P_sys: alpha * a[d] / k_sys,
         ss_pump: l.xs[0], ss_target: l.xs[1], times_s: l.times, t_goal_s: goal_time(one, goal) });
       if (g_op <= 0) warnings.push(`${lv.label}: T1p (${f4(lv.T1p_s)} s) must be longer than the sealed-cell build-up time T_b (${f4(lv.T_b_s)} s), since 1/T_b = Gop + 1/T1p.`);
-      if (Np * s[d] / G > 0.2) warnings.push(`${lv.label}: N_p/(T_b G) = ${(Np * s[d] / G).toFixed(2)}. The exchange is close to limiting the build-up, so the pumping cell runs ahead of the target ` +
+      if (Np * s[d] / G > 0.2) warnings.push(`${lv.label}: N_p/(T_b G) = ${(Np * s[d] / G).toFixed(2)}. The exchange ${Np * s[d] / G > 1 ? "limits" : "is close to limiting"} the build-up, so the pumping cell runs ahead of the target ` +
         "and a stronger discharge gains less than its f_d suggests.");
     });
 

@@ -993,8 +993,9 @@ def schedule(Np, Nt, G, T1t_s, levels, S):
             warnings.append("%s: T1p (%s s) must be longer than the sealed-cell build-up time T_b (%s s), since 1/T_b = Gop + 1/T1p."
                             % (lv["label"], fmt4(lv["T1p_s"]), fmt4(lv["T_b_s"])))
         if Np * s[d] / G > 0.2:
-            warnings.append("%s: N_p/(T_b G) = %.2f. The exchange is close to limiting the build-up, so the pumping cell runs ahead of the target "
-                            "and a stronger discharge gains less than its f_d suggests." % (lv["label"], Np * s[d] / G))
+            warnings.append("%s: N_p/(T_b G) = %.2f. The exchange %s the build-up, so the pumping cell runs ahead of the target "
+                            "and a stronger discharge gains less than its f_d suggests."
+                            % (lv["label"], Np * s[d] / G, "limits" if Np * s[d] / G > 1 else "is close to limiting"))
 
     # the schedule's trace, with each switch on the grid
     switches = [{"t_s": sg["t0"], "from": segs[k]["level"], "to": sg["level"], "P_pump": sg["x0"][0], "P_target": sg["x0"][1]}
