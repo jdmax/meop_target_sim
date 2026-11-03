@@ -196,6 +196,14 @@ dl.facts dd { margin: 0; text-align: right; font-family: var(--font-mono); font-
 .charts canvas { display: block; width: 100%; height: 250px; margin-top: 6px; touch-action: pan-y; cursor: crosshair; }
 .eqs { font: 15px/1.7 var(--font-body); color: var(--ink); margin: 8px 0 0; overflow-x: auto; white-space: pre; }
 h2 sub, h2 sup, legend sub, legend sup { text-transform: none; }
+/* rail cards fold up under their titles */
+.rail legend button { all: inherit; display: inline-flex; align-items: center; gap: 6px; padding: 0; cursor: pointer; }
+.rail legend button::before { content: ""; width: 0; height: 0; border: 4.5px solid transparent; border-top: 5.5px solid currentColor; border-bottom: 0; transition: transform 0.15s; }
+.rail legend button:hover { color: var(--ink); }
+.rail legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.rail fieldset.collapsed { padding-bottom: 4px; }
+.rail fieldset.collapsed > :not(legend) { display: none; }
+.rail fieldset.collapsed legend button::before { transform: rotate(-90deg); }
 sub, sup { font-size: 0.72em; line-height: 0; }
 .probe { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px 28px; align-items: start; }
 table.amps { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
@@ -678,6 +686,22 @@ $("fs-cells").insertAdjacentHTML("beforeend", '<p class="hint" id="tcHint"></p>'
 $("fs-loop").insertAdjacentHTML("beforeend", '<p class="hint" id="engineHint"></p>');
 $("fs-shield").insertAdjacentHTML("beforeend", '<p class="hint" id="shieldHint"></p>');
 $("fs-cooler").insertAdjacentHTML("beforeend", '<p class="hint">With the map on, the first stage floats wherever the two loads put it and a trim heater holds the second stage at the target set point. With it off, both temperatures are fixed and the map gives the capacity there.</p>');
+// each rail card's title folds it away; which ones are folded is remembered per viewer
+{
+  let folded = [];
+  try { folded = JSON.parse(localStorage.getItem("he3x-rail") || "[]"); } catch (e) {}
+  document.querySelectorAll(".rail fieldset").forEach(fs => {
+    const lg = fs.querySelector("legend"), b = document.createElement("button");
+    b.type = "button"; b.textContent = lg.textContent; lg.replaceChildren(b);
+    const set = c => { fs.classList.toggle("collapsed", c); b.setAttribute("aria-expanded", String(!c)); };
+    set(Array.isArray(folded) && folded.includes(fs.id));
+    b.addEventListener("click", () => {
+      set(!fs.classList.contains("collapsed"));
+      const ids = [...document.querySelectorAll(".rail fieldset.collapsed")].map(f => f.id);
+      try { localStorage.setItem("he3x-rail", JSON.stringify(ids)); } catch (e) {}
+    });
+  });
+}
 const tcLabel = () => params.cooler_map ? "Target set point" : "Target temperature";
 
 function syncInputs() {
@@ -694,7 +718,7 @@ function syncInputs() {
   $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
   $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
   $("fs-loop").hidden = params.mode !== "loop";
-  $("fs-int").querySelector("legend").textContent = params.mode === "loop" ? "Intercept on the downcomer" : "Intercept on the tube";
+  $("fs-int").querySelector("legend button").textContent = params.mode === "loop" ? "Intercept on the downcomer" : "Intercept on the tube";
   ["T_int", "s_int_cm"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.intercept; });
   ["engine_cm", "gap_cm"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.engine; });
   inputs.T_engine.num.disabled = inputs.T_engine.rng.disabled = !params.engine;
