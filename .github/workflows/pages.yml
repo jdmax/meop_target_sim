@@ -27,10 +27,12 @@ jobs:
       - name: Assemble the site
         run: |
           mkdir _site
-          cp index.html he3_model.py he3_model.js _site/
+          cp index.html discharge_schedule.html he3_model.py he3_model.js _site/
           # Cache-bust the JS port so a browser never pairs a new page with a stale cached model
-          sed -i "s/he3_model\.js?v=dev/he3_model.js?v=${GITHUB_SHA::8}/" _site/index.html
-          grep -q "he3_model.js?v=${GITHUB_SHA::8}" _site/index.html
+          for f in index.html discharge_schedule.html; do
+            sed -i "s/he3_model\.js?v=dev/he3_model.js?v=${GITHUB_SHA::8}/" _site/$f
+            grep -q "he3_model.js?v=${GITHUB_SHA::8}" _site/$f
+          done
           # Transfer-tube joint stress analysis (static page, results embedded)
           mkdir -p _site/glass_joint
           cp glass_joint/index.html _site/glass_joint/

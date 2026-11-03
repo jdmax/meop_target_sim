@@ -1,0 +1,1012 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Discharge schedule for a two-cell polarized 3He target: run a strong MEOP discharge early and a weaker one later, following the upper envelope of the production rates.">
+<title>³He Discharge Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&display=swap">
+<style>
+/* Same instrument-panel layout and tokens as index.html: controls rail on the left, the schedule's charts and tables on the right. */
+:root {
+  --bg: #EDF1F3; --panel: #F9FBFC; --ink: #13212B; --muted: #5A6A74; --line: #C9D3D9;
+  --accent: #2C6E72; --warm: #B9531C; --cold: #2860A6; --good: #2F7D4A; --warn: #A86A0B; --bad: #B23A2E;
+  /* discharge levels, in fixed order (validated as a categorical set against --panel, light and dark) */
+  --lv1: #6250D6; --lv2: #1BAF7A; --lv3: #EDA100; --lv4: #E87BA4; --lv5: #008300; --lv6: #E34948;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
+    --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E; color-scheme: dark;
+    --lv1: #9085E9; --lv2: #199E70; --lv3: #C98500; --lv4: #D55181; --lv5: #008300; --lv6: #E66767;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1418; --panel: #151D22; --ink: #E2E9ED; --muted: #8E9CA4; --line: #2B3840;
+  --accent: #5DB4AE; --warm: #F0894A; --cold: #74AAEA; --good: #5FC184; --warn: #E2A846; --bad: #F07B6E; color-scheme: dark;
+  --lv1: #9085E9; --lv2: #199E70; --lv3: #C98500; --lv4: #D55181; --lv5: #008300; --lv6: #E66767;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); }
+.app {
+  max-width: 1360px; margin: 0 auto; padding-block: 20px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px;
+}
+h1, h2, h3, .label, .seg button, .chip { font-family: var(--font-display); }
+h1 { font-size: 30px; line-height: 1.05; font-weight: 700; margin: 0; letter-spacing: 0.005em; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin: 0; }
+h2 sub, h2 sup, legend sub, legend sup, .sym { text-transform: none; }
+sub, sup { font-size: 0.72em; line-height: 0; }
+.num, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+header { display: grid; grid-template-columns: minmax(0, 70ch) minmax(0, 1fr); grid-template-areas: "title actions" "intro refs"; gap: 6px 40px; align-items: end; }
+header h1 { grid-area: title; }
+header .head-actions { grid-area: actions; justify-self: end; }
+header .sub { color: var(--muted); margin: 0; max-width: 70ch; align-self: start; }
+header .intro { grid-area: intro; }
+header .refs { grid-area: refs; font-size: 13.5px; max-width: 60ch; padding-left: 16px; border-left: 2px solid var(--line); }
+@media (max-width: 1040px) {
+  header { grid-template-columns: minmax(0, 1fr); grid-template-areas: "title" "intro" "refs" "actions"; }
+  header .head-actions { justify-self: start; margin-top: 6px; }
+  header .refs { padding-left: 0; border-left: 0; }
+}
+header .refs a, .notes a, .explain a { color: var(--accent); }
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.engine {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); font: 500 13px var(--font-mono); white-space: nowrap;
+}
+.engine .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.engine[data-state="loading"] .dot { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+.engine[data-state="python"] .dot { background: var(--good); }
+.engine[data-state="js"] .dot { background: var(--warn); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+.layout { display: grid; grid-template-columns: minmax(270px, 330px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 920px) { .layout { grid-template-columns: minmax(0, 1fr); } .main { order: -1; } }
+
+/* controls */
+.rail { display: grid; gap: 12px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg.three { grid-template-columns: 1fr 1fr 1fr; }
+fieldset .seg { margin: 4px 0 6px; background: var(--bg); }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 9px 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+fieldset .seg button { padding: 6px 4px; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 0; padding: 10px 12px 12px; min-width: 0; }
+legend { font: 600 12.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); padding: 0 4px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 2px 10px; align-items: center; padding: 5px 0; }
+.row + .row { border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.row label { font-size: 14px; color: var(--ink); }
+.row .unit { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+.row input[type="number"], .row select {
+  width: 100%; font: 500 13.5px var(--font-mono); text-align: right; padding: 3px 6px;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink);
+}
+.row select { text-align: left; }
+.row.wide { grid-template-columns: minmax(0, 1fr) 132px; }
+.row input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; font-size: 14px; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+details.more { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+details.more > summary { cursor: pointer; padding: 9px 12px; font: 600 12.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+details.more > div { display: grid; gap: 12px; padding: 0 10px 10px; }
+details.more fieldset { background: var(--bg); }
+
+/* main */
+.main { display: grid; gap: 18px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); min-width: 0; }
+.kpi .k { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.kpi .v { font: 500 26px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .s { font-size: 12.5px; color: var(--muted); }
+.kpi.target .v { color: var(--cold); }
+@media (max-width: 560px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pill { font: 600 11.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.pill.good { color: var(--good); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.warnings { display: grid; gap: 6px; }
+.warnings p { margin: 0; font-size: 13.5px; padding: 7px 10px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); border-radius: 0 6px 6px 0; }
+.btn {
+  font: 600 14px var(--font-display); border: 1px solid var(--ink); background: var(--ink); color: var(--bg);
+  border-radius: 7px; padding: 6px 14px; cursor: pointer; text-decoration: none; display: inline-block;
+}
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* levels table */
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table.lv, table.res { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.lv th, table.res th { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: right; padding: 2px 0 6px 10px; white-space: nowrap; vertical-align: bottom; }
+table.lv th { text-transform: none; letter-spacing: 0.02em; font-size: 13px; }
+table.lv th sub, table.res th sub { text-transform: none; }
+table.lv th:nth-child(2), table.res th:first-child, table.res td:first-child { text-align: left; }
+table.lv th.in { color: var(--ink); }
+table.lv td, table.res td { text-align: right; padding: 4px 0 4px 10px; font: 13.5px var(--font-mono); font-variant-numeric: tabular-nums; border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); white-space: nowrap; }
+table.lv td:first-child, table.lv th:first-child { padding-left: 0; width: 14px; }
+table.lv td:nth-child(2) { text-align: left; }
+table.lv input { font: 500 13.5px var(--font-mono); padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); text-align: right; width: 76px; }
+table.lv input.lbl { text-align: left; width: 96px; font-family: var(--font-body); }
+table.lv .tag { display: inline-block; margin-left: 6px; font: 600 10.5px var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--warn); border: 1px dashed currentColor; border-radius: 4px; padding: 0 4px; vertical-align: 1px; }
+table.lv td.flag { color: var(--bad); }
+table.lv button.x { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 5px; width: 26px; height: 26px; cursor: pointer; font-size: 15px; line-height: 1; }
+table.lv button.x:hover:not(:disabled) { color: var(--bad); border-color: var(--bad); }
+table.lv button.x:disabled { opacity: 0.35; cursor: not-allowed; }
+i.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; }
+.lv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+table.res td:first-child { font-family: var(--font-body); color: var(--ink); }
+table.res tr.sched td { border-top: 1px solid var(--line); font-weight: 600; }
+table.res td .d { display: block; font: 12.5px var(--font-body); color: var(--muted); white-space: normal; font-weight: 400; }
+
+/* charts */
+.chart-head { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+.legend { display: flex; gap: 6px 14px; font-size: 13.5px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: 4px; margin-right: 6px; }
+.legend i.dash { background: none !important; height: 0; border-top: 2px dashed; vertical-align: 5px; }
+.legend i.band { height: 10px; width: 14px; vertical-align: -1px; border-radius: 2px; }
+.legend i.mk { width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
+.tread { font: 500 12.5px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.5em; margin-top: 8px; }
+.tread b { font-weight: 500; color: var(--ink); }
+#polChart { display: block; width: 100%; height: 380px; margin-top: 6px; touch-action: pan-y; cursor: crosshair; }
+#fChart { display: block; width: 100%; height: 320px; margin-top: 6px; touch-action: pan-y; cursor: crosshair; }
+.pair { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1180px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+.plan { font-size: 14px; margin: 10px 0 0; }
+
+/* explanation */
+.explain { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 6px 32px; }
+.explain h3 { font-size: 16px; font-weight: 600; margin: 12px 0 4px; }
+.explain p, .explain li { font-size: 14px; margin: 0 0 8px; max-width: 70ch; }
+.explain ol { padding-left: 20px; margin: 0; }
+.explain .eq { font: 15px/1.6 var(--font-body); background: var(--bg); border-radius: 6px; padding: 5px 10px; margin: 2px 0 8px; overflow-x: auto; white-space: nowrap; }
+.notes { color: var(--muted); font-size: 13.5px; margin: 0; padding-left: 20px; }
+.notes li { margin: 3px 0; }
+footer.site { color: var(--muted); font-size: 13.5px; text-align: center; padding-top: 4px; border-top: 1px solid var(--line); }
+footer.site a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .engine .dot { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Discharge schedule</h1>
+    <p class="sub intro">A strong MEOP discharge pumps fast but to a lower polarization; a weak one pumps slowly but further. Enter the sealed-cell build-up at each discharge level, and this page finds when to switch so the target reaches its goal soonest. The tubes, cooler and target are the main page's model, running in Python in your browser.</p>
+    <p class="sub refs">Part of the <a href="./">³He two-cell exchange model</a>, which shares its cell, tube and cooler settings with this page. Two-cell target concept: J. Maxwell &amp; R. Milner, <a href="https://arxiv.org/abs/2106.06606">arXiv:2106.06606</a>.</p>
+    <div class="head-actions">
+      <a class="btn ghost" href="./">← Two-cell exchange</a>
+      <div class="engine" id="engine" data-state="loading" title=""><span class="dot"></span><span id="engineText">Loading Python…</span></div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail" aria-label="Model inputs">
+      <fieldset id="fs-sched"><legend>Schedule</legend>
+        <div class="seg three" role="group" aria-label="Schedule">
+          <button type="button" data-mode="single">Single level</button>
+          <button type="button" data-mode="switch">Two-level</button>
+          <button type="button" data-mode="envelope">Envelope</button>
+        </div>
+        <div id="pane-single">
+          <div class="row wide"><label for="sel-single">Level</label><select id="sel-single"></select></div>
+        </div>
+        <div id="pane-switch">
+          <div class="row wide"><label for="sel-early">First, strong</label><select id="sel-early"></select></div>
+          <div class="row wide"><label for="sel-late">Then</label><select id="sel-late"></select></div>
+          <div class="seg three" role="group" aria-label="When to switch" id="trigger">
+            <button type="button" data-trig="auto">At P*</button>
+            <button type="button" data-trig="P">At P<sub>p</sub></button>
+            <button type="button" data-trig="t">At a time</button>
+          </div>
+          <div id="fs-sw"></div>
+          <p class="hint" id="swHint"></p>
+        </div>
+        <div id="pane-envelope">
+          <div id="fs-env"></div>
+          <p class="hint">At each moment, run the level with the largest f<sub>d</sub>(P<sub>p</sub>). Hysteresis waits until P<sub>p</sub> is that far past a crossover; the dwell holds each level at least that long.</p>
+        </div>
+      </fieldset>
+      <fieldset id="fs-goal"><legend>Goal, in the target cell</legend>
+        <div class="seg" role="group" aria-label="Goal given as">
+          <button type="button" data-goal="frac">Share of best</button>
+          <button type="button" data-goal="abs">Polarization</button>
+        </div>
+        <p class="hint" id="goalHint"></p>
+      </fieldset>
+      <fieldset id="fs-span"><legend>Time shown</legend></fieldset>
+      <div class="seg" role="group" aria-label="Gas exchange configuration">
+        <button type="button" id="modeSingle" aria-pressed="false">Single tube</button>
+        <button type="button" id="modeLoop" aria-pressed="true">Convection loop</button>
+      </div>
+      <fieldset id="fs-cells"><legend>Gas and cells</legend></fieldset>
+      <fieldset id="fs-tubes"><legend>Transfer tubes</legend></fieldset>
+      <fieldset id="fs-loop"><legend>Riser engine</legend></fieldset>
+      <fieldset id="fs-int"><legend>Intercept on the cold leg</legend></fieldset>
+      <fieldset id="fs-relax"><legend>Target relaxation</legend></fieldset>
+      <details class="more" id="moreCooler">
+        <summary>Cooler and heat loads</summary>
+        <div>
+          <fieldset id="fs-shield"><legend>First stage and radiation shield</legend></fieldset>
+          <fieldset id="fs-coldrad"><legend>Second stage, target and cold surfaces</legend></fieldset>
+          <fieldset id="fs-cooler"><legend>Cryocooler (PT420)</legend></fieldset>
+        </div>
+      </details>
+      <p class="hint">The cell, tube, cooler and target-T<sub>1</sub> settings are shared with the main page: a change on either page shows up on the other.</p>
+    </aside>
+
+    <main class="main">
+      <div class="kpis">
+        <div class="kpi target"><div class="k">Schedule reaches the goal in</div><div class="v" id="kSched">–</div><div class="s" id="kSchedS"></div></div>
+        <div class="kpi"><div class="k">Fastest single level</div><div class="v" id="kBest">–</div><div class="s" id="kBestS"></div></div>
+        <div class="kpi"><div class="k">Time saved</div><div class="v" id="kSaved">–</div><div class="s" id="kSavedS"></div></div>
+      </div>
+
+      <section class="card" aria-label="Discharge levels">
+        <div class="section-head"><h2>Discharge levels, sealed-cell values</h2><span class="pill" id="lvPill"></span></div>
+        <div class="tablewrap">
+          <table class="lv">
+            <thead><tr>
+              <th></th><th class="in">Level</th>
+              <th class="in" title="Sealed-cell steady polarization">M<sub>ss</sub>, %</th>
+              <th class="in" title="Sealed-cell build-up time">T<sub>b</sub>, s</th>
+              <th class="in" title="Pumping-cell T1 with this discharge on">T<sub>1p</sub>, s</th>
+              <th title="Optical pumping rate, 1/T_b − 1/T_1p">Γ<sub>op</sub>, /s</th>
+              <th title="Polarization MEOP alone would reach">P<sub>lim</sub></th>
+              <th title="Net production at zero polarization, M_ss/T_b">f<sub>d</sub>(0), %/min</th>
+              <th title="Whole-system build-up rate and limit with P_p = P_t">k<sub>d</sub>, P<sub>d</sub></th>
+              <th title="Pumping-cell rate over the exchange rate; above 0.2 the exchange starts to limit">N<sub>p</sub>/(T<sub>b</sub>G)</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="lvBody"></tbody>
+          </table>
+        </div>
+        <div class="lv-actions">
+          <button class="btn ghost" type="button" id="lvAdd">Add level</button>
+          <button class="btn ghost" type="button" id="lvReset">Restore placeholders</button>
+        </div>
+        <p class="hint" id="lvHint"></p>
+      </section>
+
+      <div class="warnings" id="warnings"></div>
+
+      <section class="card" aria-label="Polarization under the schedule">
+        <div class="chart-head">
+          <h2>Polarization from zero</h2>
+          <div class="legend" id="polLegend"></div>
+        </div>
+        <div class="tread" id="polRead" aria-live="polite">Hover or tap the chart to read values</div>
+        <canvas id="polChart" role="img" aria-label="Polarization of both cells under the schedule, each level on its own, and the active discharge level over time; hover or tap to read values"></canvas>
+      </section>
+
+      <div class="pair">
+        <section class="card" aria-label="Production rate against polarization">
+          <div class="chart-head">
+            <h2>Net production <span class="sym">f<sub>d</sub>(P)</span> per pumping-cell atom</h2>
+            <div class="legend" id="fLegend"></div>
+          </div>
+          <div class="tread" id="fRead" aria-live="polite">Hover or tap the chart to read values</div>
+          <canvas id="fChart" role="img" aria-label="Production rate of each discharge level against polarization, with their upper envelope and crossovers; hover or tap to read values"></canvas>
+          <p class="hint">The schedule rides the upper envelope (wide band). Where two lines cross, the levels pump equally; below the crossing the steeper, stronger level is faster. The dashed line is the target's relaxation per pumping-cell atom, (N<sub>t</sub>/N<sub>p</sub>)P/T<sub>1t</sub>; where it meets the envelope, the build-up stops.</p>
+        </section>
+        <section class="card" aria-label="Time to reach the goal">
+          <div class="section-head"><h2>Time to reach the goal</h2><span class="pill" id="resPill"></span></div>
+          <div class="tablewrap">
+            <table class="res" id="resTable"></table>
+          </div>
+          <p class="plan" id="plan"></p>
+        </section>
+      </div>
+
+      <section class="card" aria-label="Why a schedule helps, and how to measure the levels">
+        <div class="section-head"><h2>Why switching helps, and how to measure <span class="sym">f<sub>d</sub></span></h2></div>
+        <div class="explain" id="explain">
+          <div>
+            <h3>One polarization, set by MEOP</h3>
+            <p id="exOne">The target holds about N<sub>t</sub>/N<sub>p</sub> times as many atoms as the pumping cell, and the exchange turns the pumping cell over in N<sub>p</sub>/G, far faster than MEOP builds it up. The two cells then share nearly one polarization P, and</p>
+            <div class="eq">N dP/dt = N<sub>p</sub> f<sub>d</sub>(P) − N<sub>t</sub> P/T<sub>1t</sub>,   f<sub>d</sub>(P) = (M<sub>ss,d</sub> − P)/T<sub>b,d</sub></div>
+            <p>where f<sub>d</sub> is the net production per pumping-cell atom with discharge level d, straight from the sealed-cell build-up.</p>
+            <h3>Run whichever level is faster at the current P</h3>
+            <p>The time to reach a goal is t = ∫ dP / (dP/dt). The integrand depends only on P, and the level can be chosen afresh at every P, so the time is shortest when every step dP is taken at the larger rate: run the level with the larger f<sub>d</sub>(P). The best schedule follows the upper envelope of the f<sub>d</sub> lines, switching where they cross.</p>
+            <h3>The crossover doesn't depend on the losses</h3>
+            <p>Target relaxation, and any other loss that depends only on P (wall relaxation, or a leak up the supply line if the valve were open), subtracts the same amount at a given P whichever level is running. Comparing levels at the same P compares f<sub>d</sub> alone, so the crossover</p>
+            <div class="eq">P* = (M<sub>H</sub>/T<sub>H</sub> − M<sub>L</sub>/T<sub>L</sub>) / (1/T<sub>H</sub> − 1/T<sub>L</sub>)</div>
+            <p>is fixed by the sealed-cell values, whatever the target T<sub>1</sub>, cell volumes or tubes. Written with the whole-system rates, dP/dt = k<sub>d</sub>(P<sub>d</sub> − P), it is P* = (k<sub>H</sub>P<sub>H</sub> − k<sub>L</sub>P<sub>L</sub>)/(k<sub>H</sub> − k<sub>L</sub>): the losses change each k<sub>d</sub> and P<sub>d</sub>, but not this combination. The levels table lists k<sub>d</sub> and P<sub>d</sub>. The losses do decide how far up the envelope the build-up gets, and so whether a crossover is ever reached.</p>
+          </div>
+          <div>
+            <h3>When a stronger discharge stops helping</h3>
+            <p>All of this assumes the exchange keeps up, N<sub>p</sub>/(T<sub>b</sub>G) ≪ 1. As it approaches 1, the pumping cell runs ahead of the target, P<sub>p</sub> and P<sub>t</sub> separate, and a stronger discharge raises P<sub>p</sub> without filling the target any faster; the schedule still switches on P<sub>p</sub>, which is no longer the right variable. The page warns above 0.2. The full two-cell equations are solved throughout, so the times shown include this effect.</p>
+            <h3>T<sub>1p</sub> splits f<sub>d</sub> but doesn't change it</h3>
+            <p>A sealed-cell build-up already includes the relaxation the discharge causes: f<sub>d</sub>(P) = Γ<sub>op</sub>(P<sub>lim</sub> − P) − P/T<sub>1p</sub>, with Γ<sub>op</sub> + 1/T<sub>1p</sub> = 1/T<sub>b</sub> and Γ<sub>op</sub>P<sub>lim</sub> = M<sub>ss</sub>/T<sub>b</sub>. T<sub>1p</sub> shares out the same straight line between pumping and relaxation, so it sets Γ<sub>op</sub> and P<sub>lim</sub> in the table but leaves the schedule unchanged.</p>
+            <h3>Measuring f<sub>d</sub>(P)</h3>
+            <ol>
+              <li>At each discharge level, run a sealed-cell build-up from zero at the operating pressure, field and laser power, and record M(t) with the optical polarimeter.</li>
+              <li>Differentiate: f<sub>d</sub>(M) = dM/dt, plotted against M. Take the slope of a smoothed curve (a Savitzky–Golay filter, say) rather than raw differences, which the polarimeter noise swamps.</li>
+              <li>A straight line from M<sub>ss</sub>/T<sub>b</sub> at M = 0 to zero at M = M<sub>ss</sub> confirms the sealed-cell description, and its two ends are the table's inputs. Curvature (relaxation that grows with M, or the cell warming under a strong discharge) means the crossover should be read where the measured curves cross, not from M<sub>ss</sub> and T<sub>b</sub>.</li>
+              <li>As a direct check, switch the discharge level partway through one build-up at a known M: dM/dt just before and after the switch gives both f<sub>d</sub>(M) at the same M, and which is larger says which side of P* you are on.</li>
+            </ol>
+          </div>
+        </div>
+        <ul class="notes">
+          <li id="srcStatus">Waiting for Python…</li>
+          <li>The code is <a href="https://github.com/jdmax/meop_target_sim/blob/main/he3_model.py">he3_model.py</a>; this page calls its <span class="mono">run_schedule(params_json)</span>, which shares the tube, cooler and exchange model with the main page's <span class="mono">run()</span>. Within each constant level the two-cell equations are solved exactly; each switch is located by scanning that solution and bisecting to machine precision.</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+  <footer class="site">Model and interface by <a href="https://orcid.org/0000-0003-2710-4646">J. Maxwell</a>, Jefferson Laboratory, 2026. Source on <a href="https://github.com/jdmax/meop_target_sim">GitHub</a>.</footer>
+</div>
+
+<script>
+// If the page script dies while starting, say so on the status pill instead of leaving "Loading Python…".
+window.addEventListener("error", e => {
+  const t = document.getElementById("engineText"), pill = document.getElementById("engine");
+  if (t && pill && pill.dataset.state === "loading") { pill.dataset.state = "js"; t.textContent = "Page script error"; pill.title = e.message; }
+});
+</script>
+<script src="he3_model.js?v=dev"></script>  <!-- the deploy workflow stamps the commit here -->
+
+<script>
+(function () {
+"use strict";
+const PYO_VER = "0.26.4";
+const CDN_FULL = "https://cdn.jsdelivr.net/pyodide/v" + PYO_VER + "/full/";
+
+/* ---------------------------------------------------------------- symbol markup (as on the main page) */
+const escHTML = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const RICH_RE = /\^\{([^}]*)\}|_\{([^}]*)\}|_([A-Za-z0-9]+)/g;
+function richHTML(s) {
+  let out = "", last = 0;
+  for (const m of s.matchAll(RICH_RE)) {
+    out += escHTML(s.slice(last, m.index)) + (m[1] != null ? `<sup>${richHTML(m[1])}</sup>` : `<sub>${escHTML(m[2] != null ? m[2] : m[3])}</sub>`);
+    last = m.index + m[0].length;
+  }
+  return out + escHTML(s.slice(last));
+}
+const plainText = s => s.replace(/[_^]\{([^}]*)\}/g, (m, x) => m[0] + x);
+
+/* ---------------------------------------------------------------- params */
+// The main page's settings (shared through its storage key), then this page's own.
+const DEFAULTS = {
+  mode: "loop", p_mbar: 100, Tc: 5, Th: 300,
+  id_mm: 8, wall_mm: 1, length_cm: 8,
+  engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25,
+  intercept: true, T_int: 45, s_int_cm: 4,
+  V_pump_cc: 49, V_target_cc: 100,
+  M_ss: 50, T_b_s: 150, tau_p_s: 600, T1t_h: 10,
+  on_h: 24,
+  T_shield: 45, A_shield_m2: 0.5, eps_shield: 0.003, other1_W: 0,
+  A_cold_cm2: 300, eps_cold: 0.05, other2_mW: 0,
+  cooler_map: true, cooler_pct: 100,
+};
+// Placeholder levels, to be replaced with measured values: "Low" is the main page's default pumping
+// (and its discharge-on T1), "High" a stronger discharge that pumps faster to a lower polarization.
+const PLACEHOLDERS = [
+  { label: "Low", M_ss: DEFAULTS.M_ss, T_b_s: DEFAULTS.T_b_s, T1p_s: DEFAULTS.tau_p_s },
+  { label: "High", M_ss: 40, T_b_s: 60, T1p_s: 200 },
+];
+const SCHED_DEFAULTS = {
+  levels: PLACEHOLDERS, sched_mode: "switch", single_level: 0, early_level: 1, late_level: 0,
+  trigger: "auto", P_switch: 20, t_switch_h: 1, hyst_pct: 0, dwell_min: 0,
+  goal_mode: "frac", goal_pct: 30, goal_frac: 90,
+};
+const LEVEL_MIN = 2, LEVEL_MAX = 6;
+const LEVEL_FIELDS = [
+  { key: "M_ss", min: 0.1, max: 99.9 },
+  { key: "T_b_s", min: 0.1, max: 1e6 },
+  { key: "T1p_s", min: 0.1, max: 1e7 },
+];
+const DEFS = [
+  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
+  { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
+  { fs: "cells", key: "V_target_cc", label: "Target cell volume", unit: "cm³", min: 5, max: 500, log: true, dp: 0 },
+  { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 2.5, max: 30, dp: 1 },
+  { fs: "tubes", key: "id_mm", label: "Inner diameter", unit: "mm", min: 2, max: 16, dp: 1 },
+  { fs: "tubes", key: "wall_mm", label: "Wall thickness", unit: "mm", min: 0.5, max: 2.5, dp: 2 },
+  { fs: "tubes", key: "length_cm", label: "Length, cell to cell", unit: "cm", min: 1, max: 8, dp: 1 },
+  { fs: "loop", key: "engine", label: "Engine clamp on the riser", toggle: true },
+  { fs: "loop", key: "engine_stage", label: "Held by the first stage, not a heater", toggle: true },
+  { fs: "loop", key: "engine_cm", label: "Engine height", unit: "cm", min: 0.5, max: 8, dp: 1 },
+  { fs: "loop", key: "T_engine", label: "Riser engine temperature", unit: "K", min: 4, max: 300, log: true, dp: 1 },
+  { fs: "loop", key: "gap_cm", label: "Isolating gap below engine", unit: "cm", min: 0.1, max: 3, dp: 2 },
+  { fs: "int", key: "intercept", label: "Intercept on (first stage)", toggle: true },
+  { fs: "int", key: "T_int", label: "Intercept temperature", unit: "K", min: 15, max: 120, dp: 0 },
+  { fs: "int", key: "s_int_cm", label: "Height above target cell", unit: "cm", min: 0.5, max: 15, dp: 1 },
+  { fs: "relax", key: "T1t_h", label: "Target-cell T_1 (τ_t)", unit: "h", min: 0.05, max: 500, log: true, dp: 2 },
+  { fs: "span", key: "on_h", label: "Pump for", unit: "h", min: 0.05, max: 96, log: true, dp: 2 },
+  { fs: "shield", key: "T_shield", label: "First-stage / shield temperature", unit: "K", min: 20, max: 120, dp: 0 },
+  { fs: "shield", key: "A_shield_m2", label: "Shield area facing 300 K", unit: "m²", min: 0.02, max: 5, log: true, dp: 3 },
+  { fs: "shield", key: "eps_shield", label: "Effective emissivity, 300 K → shield (MLI)", unit: "", min: 0.0005, max: 0.2, log: true, dp: 4 },
+  { fs: "shield", key: "other1_W", label: "Other first-stage loads (supports, wiring)", unit: "W", min: 0, max: 30, dp: 2 },
+  { fs: "coldrad", key: "A_cold_cm2", label: "Cold surface facing the shield (target cell, clamps)", unit: "cm²", min: 10, max: 5000, log: true, dp: 0 },
+  { fs: "coldrad", key: "eps_cold", label: "Effective emissivity, shield → cold surface", unit: "", min: 0.005, max: 1, log: true, dp: 3 },
+  { fs: "coldrad", key: "other2_mW", label: "Other second-stage loads (supports, wiring, NMR)", unit: "mW", min: 0, max: 2000, dp: 0 },
+  { fs: "cooler", key: "cooler_map", label: "Stage temperatures from the PT420 map", toggle: true },
+  { fs: "cooler", key: "cooler_pct", label: "Cooler performance, share of the reference chart", unit: "%", min: 30, max: 130, dp: 0 },
+  { fs: "sw", key: "P_switch", label: "Switch when P_p reaches", unit: "%", min: 0, max: 90, dp: 1 },
+  { fs: "sw", key: "t_switch_h", label: "Switch after", unit: "h", min: 0.01, max: 48, log: true, dp: 2 },
+  { fs: "env", key: "hyst_pct", label: "Hysteresis in P_p", unit: "%", min: 0, max: 5, dp: 2 },
+  { fs: "env", key: "dwell_min", label: "Minimum dwell", unit: "min", min: 0, max: 240, dp: 0 },
+  { fs: "goal", key: "goal_frac", label: "Share of the best single-level steady state", unit: "%", min: 50, max: 99.9, dp: 1 },
+  { fs: "goal", key: "goal_pct", label: "Target polarization", unit: "%", min: 1, max: 95, dp: 1 },
+];
+const SYS_KEY = "he3x-params", SCHED_KEY = "he3x-sched";
+const copyLevels = ls => ls.map(l => ({ label: String(l.label), M_ss: +l.M_ss, T_b_s: +l.T_b_s, T1p_s: +l.T1p_s }));
+const validLevels = ls => Array.isArray(ls) && ls.length >= LEVEL_MIN && ls.length <= LEVEL_MAX &&
+  ls.every(l => l && typeof l.label === "string" && LEVEL_FIELDS.every(f => typeof l[f.key] === "number" && isFinite(l[f.key]) && l[f.key] > 0));
+
+let params = Object.assign({}, DEFAULTS, SCHED_DEFAULTS, { levels: copyLevels(PLACEHOLDERS) });
+function loadShared() {      // the main page's settings
+  try {
+    const s = JSON.parse(localStorage.getItem(SYS_KEY) || "null");
+    if (s) for (const k in DEFAULTS) if (k in s && typeof s[k] === typeof DEFAULTS[k]) params[k] = s[k];
+  } catch (e) {}
+}
+loadShared();
+try {
+  const s = JSON.parse(localStorage.getItem(SCHED_KEY) || "null");
+  if (s) {
+    for (const k in SCHED_DEFAULTS) if (k !== "levels" && k in s && typeof s[k] === typeof SCHED_DEFAULTS[k]) params[k] = s[k];
+    if (validLevels(s.levels)) params.levels = copyLevels(s.levels);
+  }
+} catch (e) {}
+function save() {
+  try {
+    const sys = JSON.parse(localStorage.getItem(SYS_KEY) || "null") || {};
+    for (const k in DEFAULTS) sys[k] = params[k];
+    localStorage.setItem(SYS_KEY, JSON.stringify(sys));
+  } catch (e) {}
+  try {
+    const o = {};
+    for (const k in SCHED_DEFAULTS) o[k] = params[k];
+    localStorage.setItem(SCHED_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+
+const $ = id => document.getElementById(id);
+const inputs = {};
+const toSlider = (d, v) => d.log ? (Math.log(v / d.min) / Math.log(d.max / d.min)) * 1000 : ((v - d.min) / (d.max - d.min)) * 1000;
+const fromSlider = (d, x) => d.log ? d.min * Math.pow(d.max / d.min, x / 1000) : d.min + (d.max - d.min) * x / 1000;
+const roundTo = (v, dp) => { const f = Math.pow(10, dp); return Math.round(v * f) / f; };
+
+DEFS.forEach(d => {
+  const fs = $("fs-" + d.fs);
+  if (d.toggle) {
+    const lab = document.createElement("label");
+    lab.className = "toggle";
+    lab.innerHTML = `<span>${richHTML(d.label)}</span><input type="checkbox" id="in-${d.key}">`;
+    fs.appendChild(lab);
+    const cb = lab.querySelector("input");
+    cb.addEventListener("change", () => { params[d.key] = cb.checked; syncInputs(); changed(true); });
+    inputs[d.key] = { d, cb };
+    return;
+  }
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<label for="num-${d.key}">${richHTML(d.label)}<span class="unit">${d.unit}</span></label>
+    <input type="number" id="num-${d.key}" step="any" min="${d.min}" max="${d.max}">
+    <input type="range" id="rng-${d.key}" min="0" max="1000" step="1" aria-label="${escHTML(plainText(d.label))}">`;
+  fs.appendChild(row);
+  const num = row.querySelector('input[type="number"]'), rng = row.querySelector('input[type="range"]');
+  rng.addEventListener("input", () => { params[d.key] = roundTo(fromSlider(d, +rng.value), d.dp); num.value = params[d.key]; changed(false); });
+  rng.addEventListener("change", () => changed(true));
+  num.addEventListener("change", () => {
+    let v = parseFloat(num.value);
+    if (!isFinite(v)) v = params[d.key];
+    v = Math.min(d.max, Math.max(d.min, v));
+    params[d.key] = v; num.value = v; rng.value = toSlider(d, v); changed(true);
+  });
+  inputs[d.key] = { d, num, rng };
+});
+// the goal rows sit after its toggle, and only one shows at a time
+["goal_frac", "goal_pct"].forEach(k => $("fs-goal").insertBefore(inputs[k].num.closest(".row"), $("goalHint")));
+$("fs-span").insertAdjacentHTML("beforeend", '<p class="hint">The length of the traces. Times to the goal are found however long they take.</p>');
+$("fs-cooler").insertAdjacentHTML("beforeend", '<p class="hint">With the map on, the first stage floats wherever the two loads put it and a trim heater holds the second stage at the target set point. With it off, both temperatures are fixed. The main page\'s Heat loads tab shows the details.</p>');
+$("fs-cells").insertAdjacentHTML("beforeend", '<p class="hint" id="tcHint"></p>');
+
+function syncInputs() {
+  for (const k in inputs) {
+    const it = inputs[k];
+    if (it.cb) it.cb.checked = !!params[k];
+    else { it.num.value = params[k]; it.rng.value = toSlider(it.d, params[k]); }
+  }
+  $("modeSingle").setAttribute("aria-pressed", String(params.mode === "single"));
+  $("modeLoop").setAttribute("aria-pressed", String(params.mode === "loop"));
+  $("fs-loop").hidden = params.mode !== "loop";
+  $("fs-int").querySelector("legend").textContent = params.mode === "loop" ? "Intercept on the downcomer" : "Intercept on the tube";
+  ["T_int", "s_int_cm"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.intercept; });
+  ["engine_cm", "gap_cm", "T_engine"].forEach(k => { inputs[k].num.disabled = inputs[k].rng.disabled = !params.engine; });
+  inputs.T_engine.num.closest(".row").hidden = !!(params.engine && params.engine_stage);
+  inputs.engine_stage.cb.disabled = !params.engine;
+  inputs.T_shield.num.closest(".row").hidden = !!params.cooler_map;
+  inputs.Tc.num.closest(".row").querySelector("label").firstChild.textContent = params.cooler_map ? "Target set point" : "Target temperature";
+  // schedule
+  document.querySelectorAll("#fs-sched > .seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === params.sched_mode)));
+  ["single", "switch", "envelope"].forEach(m => { $("pane-" + m).hidden = params.sched_mode !== m; });
+  document.querySelectorAll("#trigger button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.trig === params.trigger)));
+  inputs.P_switch.num.closest(".row").hidden = params.trigger !== "P";
+  inputs.t_switch_h.num.closest(".row").hidden = params.trigger !== "t";
+  document.querySelectorAll("#fs-goal .seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.goal === params.goal_mode)));
+  inputs.goal_frac.num.closest(".row").hidden = params.goal_mode !== "frac";
+  inputs.goal_pct.num.closest(".row").hidden = params.goal_mode !== "abs";
+  fillSelects();
+}
+$("modeSingle").addEventListener("click", () => { params.mode = "single"; syncInputs(); changed(true); });
+$("modeLoop").addEventListener("click", () => { params.mode = "loop"; syncInputs(); changed(true); });
+document.querySelectorAll("#fs-sched > .seg button").forEach(b => b.addEventListener("click", () => { params.sched_mode = b.dataset.mode; syncInputs(); changed(true); }));
+document.querySelectorAll("#trigger button").forEach(b => b.addEventListener("click", () => { params.trigger = b.dataset.trig; syncInputs(); changed(true); }));
+document.querySelectorAll("#fs-goal .seg button").forEach(b => b.addEventListener("click", () => { params.goal_mode = b.dataset.goal; syncInputs(); changed(true); }));
+const SELECTS = { "sel-single": "single_level", "sel-early": "early_level", "sel-late": "late_level" };
+function fillSelects() {
+  for (const [id, key] of Object.entries(SELECTS)) {
+    const sel = $(id);
+    sel.innerHTML = params.levels.map((l, i) => `<option value="${i}">${escHTML(l.label || "Level " + (i + 1))}</option>`).join("");
+    sel.value = String(Math.min(params.levels.length - 1, params[key]));
+  }
+}
+for (const [id, key] of Object.entries(SELECTS)) $(id).addEventListener("change", e => { params[key] = +e.target.value; changed(true); });
+
+/* ---------------------------------------------------------------- levels table */
+const lvColor = i => `var(--lv${i + 1})`;
+const isPlaceholder = i => i < PLACEHOLDERS.length && LEVEL_FIELDS.every(f => params.levels[i][f.key] === PLACEHOLDERS[i][f.key]);
+function renderLevels() {     // rebuilt only when rows are added or removed, so typing keeps its focus
+  const n = params.levels.length;
+  $("lvBody").innerHTML = params.levels.map((l, i) => `<tr data-i="${i}">
+    <td><i class="sw" style="background:${lvColor(i)}"></i></td>
+    <td><input class="lbl" type="text" data-k="label" aria-label="Name of level ${i + 1}" maxlength="16"><span class="tag" hidden>placeholder</span></td>
+    ${LEVEL_FIELDS.map(f => `<td><input type="number" step="any" min="${f.min}" max="${f.max}" data-k="${f.key}" aria-label="${f.key} of level ${i + 1}"></td>`).join("")}
+    <td data-d="gop">–</td><td data-d="plim">–</td><td data-d="f0">–</td><td data-d="k">–</td><td data-d="x">–</td>
+    <td><button type="button" class="x" aria-label="Remove level ${i + 1}" ${n <= LEVEL_MIN ? "disabled" : ""}>×</button></td></tr>`).join("");
+  $("lvBody").querySelectorAll("tr").forEach(tr => {
+    const i = +tr.dataset.i;
+    tr.querySelectorAll("input").forEach(inp => {
+      const k = inp.dataset.k;
+      inp.value = params.levels[i][k];
+      inp.addEventListener("change", () => {
+        if (k === "label") params.levels[i].label = inp.value.trim() || "Level " + (i + 1);
+        else {
+          const f = LEVEL_FIELDS.find(f => f.key === k);
+          let v = parseFloat(inp.value);
+          if (!isFinite(v)) v = params.levels[i][k];
+          params.levels[i][k] = Math.min(f.max, Math.max(f.min, v));
+        }
+        inp.value = params.levels[i][k];
+        fillSelects(); markPlaceholders(); changed(true);
+      });
+    });
+    tr.querySelector("button.x").addEventListener("click", () => removeLevel(i));
+  });
+  $("lvAdd").disabled = n >= LEVEL_MAX;
+  markPlaceholders();
+}
+function markPlaceholders() {
+  let any = false;
+  $("lvBody").querySelectorAll("tr").forEach(tr => { const p = isPlaceholder(+tr.dataset.i); any = any || p; tr.querySelector(".tag").hidden = !p; });
+  const pill = $("lvPill");
+  pill.className = "pill " + (any ? "warn" : "good");
+  pill.textContent = any ? "Placeholder values" : "Your values";
+  $("lvHint").innerHTML = (any ? "<b>Rows marked placeholder are not measurements.</b> Replace them with sealed-cell build-ups taken at each discharge level, at the operating pressure and field. " : "") +
+    richHTML("M_ss and T_b come from fitting M(t) = M_ss(1 − e^{−t/T_b}); T_{1p} is the pumping-cell relaxation with that discharge on and the laser off. Γ_op = 1/T_b − 1/T_{1p} and P_lim = M_ss/(Γ_op T_b) follow from them. k_d and P_d are the whole-system rate and limit, dP/dt = k_d(P_d − P), with the two cells at one polarization.");
+}
+function removeLevel(i) {
+  if (params.levels.length <= LEVEL_MIN) return;
+  params.levels.splice(i, 1);
+  for (const key of Object.values(SELECTS)) params[key] = params[key] > i ? params[key] - 1 : Math.min(params[key], params.levels.length - 1);
+  renderLevels(); fillSelects(); changed(true);
+}
+$("lvAdd").addEventListener("click", () => {
+  if (params.levels.length >= LEVEL_MAX) return;
+  const last = params.levels[params.levels.length - 1];
+  params.levels.push({ label: "Level " + (params.levels.length + 1), M_ss: last.M_ss, T_b_s: last.T_b_s, T1p_s: last.T1p_s });
+  renderLevels(); fillSelects(); changed(true);
+});
+$("lvReset").addEventListener("click", () => {
+  params.levels = copyLevels(PLACEHOLDERS);
+  Object.assign(params, { single_level: SCHED_DEFAULTS.single_level, early_level: SCHED_DEFAULTS.early_level, late_level: SCHED_DEFAULTS.late_level });
+  renderLevels(); fillSelects(); changed(true);
+});
+
+/* ---------------------------------------------------------------- engines */
+let py = null, pyRun = null, jsAgrees = true, R = null, lastPyMs = null, pending = null;
+function setEngine(state, text, title) { const e = $("engine"); e.dataset.state = state; $("engineText").textContent = text; e.title = title || ""; }
+function computeJS() { return JSON.parse(He3ModelJS.run_schedule(JSON.stringify(params))); }
+// A stale cached he3_model.js can lack the schedule; never let that block Python.
+function previewJS(source) {
+  try { show(computeJS(), source); }
+  catch (e) { jsAgrees = false; showError("JavaScript preview failed (" + e.message + "), so the page waits for Python."); }
+}
+function computePy() {
+  const t0 = performance.now();
+  const out = JSON.parse(pyRun(JSON.stringify(params)));
+  lastPyMs = performance.now() - t0;
+  return out;
+}
+function changed(final) {
+  save();
+  if (!py || jsAgrees) previewJS(py ? "preview" : null);
+  if (py && (final || !jsAgrees)) {
+    clearTimeout(pending);
+    pending = setTimeout(() => {
+      try { show(computePy(), "python"); }
+      catch (e) { showError("Python error: " + e.message); }
+    }, final ? 30 : 250);
+  }
+}
+function showError(msg) {
+  $("warnings").innerHTML = "";
+  const p = document.createElement("p"); p.textContent = msg; $("warnings").appendChild(p);
+}
+// main page in another tab: pick up its settings
+window.addEventListener("storage", e => { if (e.key === SYS_KEY) { loadShared(); syncInputs(); changed(true); } });
+
+/* ---------------------------------------------------------------- formatting */
+const fmtPct = v => (v * 100).toFixed(1) + "%";
+function fmtTime(s) {
+  if (s == null || !isFinite(s)) return "–";
+  if (s < 90) return s.toFixed(s < 10 ? 1 : 0) + " s";
+  if (s < 5400) return (s / 60).toFixed(s < 600 ? 1 : 0) + " min";
+  if (s < 3 * 86400) return (s / 3600).toFixed(s < 36000 ? 2 : 1) + " h";
+  return (s / 86400).toFixed(1) + " d";
+}
+function fmtSci(v) {
+  if (!isFinite(v) || v === 0) return "0";
+  const e = Math.floor(Math.log10(Math.abs(v))), m = v / Math.pow(10, e);
+  return m.toFixed(2) + "×10" + String(e).split("").map(c => "⁰¹²³⁴⁵⁶⁷⁸⁹"[+c] || (c === "-" ? "⁻" : c)).join("");
+}
+const fmtK = v => String(+(+v).toPrecision(3));
+const perMin = v => (v * 6000).toPrecision(3);      // fraction per second -> % per minute
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const label = i => R.levels[i].label;
+
+/* ---------------------------------------------------------------- results */
+function planText() {
+  const S = R.sched, sw = S.switches;
+  if (!sw.length) {
+    const only = `${escHTML(label(S.final_level))} throughout`;
+    if (S.mode === "switch" && params.trigger !== "t" && S.P_switch != null && S.P_switch > 0) {
+      const lv = R.levels[params.early_level] || R.levels[S.final_level];
+      const dp = fmtPct(S.P_switch) === fmtPct(lv.ss_pump) ? 2 : 1, pc = v => (v * 100).toFixed(dp) + "%";
+      return `${only}: the switch at P<sub>p</sub> = ${pc(S.P_switch)} never comes, because ${escHTML(lv.label)} on its own settles below it, at P<sub>p</sub> = ${pc(lv.ss_pump)}.`;
+    }
+    if (S.mode === "switch" && params.early_level !== params.late_level && params.trigger === "auto" && S.P_switch == null)
+      return `${only}: ${escHTML(label(params.early_level))} pumps faster than ${escHTML(label(params.late_level))} at every polarization, so there is nothing to switch to.`;
+    if (S.mode === "envelope") return `${only}: no other level overtakes it before the build-up settles.`;
+    return only + ".";
+  }
+  return sw.map(w => `${escHTML(label(w.from))} until P<sub>p</sub> = ${fmtPct(w.P_pump)} at ${fmtTime(w.t_s)}`).join(", then ") + `, then ${escHTML(label(sw[sw.length - 1].to))}.`;
+}
+function show(res, source) {
+  if (!res.ok) { showError((source === "python" ? "Python: " : "") + res.error); return; }
+  R = res;
+  polCh.hover = null; fCh.hover = null;
+  const S = R.sched;
+  // KPIs
+  $("kSched").textContent = fmtTime(S.t_goal_s);
+  $("kSchedS").textContent = `goal ${fmtPct(R.goal)}, settles at ${fmtPct(S.ss_target)}`;
+  const bestI = R.levels.reduce((b, l, i) => l.t_goal_s != null && (b < 0 || l.t_goal_s < R.levels[b].t_goal_s) ? i : b, -1);
+  $("kBest").textContent = bestI >= 0 ? fmtTime(R.levels[bestI].t_goal_s) : "never";
+  $("kBestS").textContent = bestI >= 0 ? `${R.levels[bestI].label} alone` : "no level alone reaches the goal";
+  $("kSaved").textContent = S.saved == null ? "–" : (100 * S.saved).toFixed(Math.abs(S.saved) < 0.1 ? 1 : 0) + "%";
+  $("kSavedS").textContent = S.saved == null ? "" : S.saved > 1e-9 ? `${fmtTime(S.best_single_s - S.t_goal_s)} sooner than ${R.levels[bestI].label} alone`
+    : S.saved < -1e-9 ? `${fmtTime(S.t_goal_s - S.best_single_s)} slower than ${R.levels[bestI].label} alone` : `the schedule is ${R.levels[bestI].label} alone`;
+
+  // derived columns
+  $("lvBody").querySelectorAll("tr").forEach(tr => {
+    const L = R.levels[+tr.dataset.i]; if (!L) return;
+    const cell = k => tr.querySelector(`[data-d="${k}"]`);
+    cell("gop").textContent = L.gamma_op > 0 ? fmtSci(L.gamma_op) : "≤ 0";
+    cell("gop").classList.toggle("flag", !(L.gamma_op > 0));
+    cell("plim").textContent = L.P_lim == null ? "–" : fmtPct(L.P_lim);
+    cell("f0").textContent = perMin(L.f0);
+    cell("k").textContent = `${(L.k_sys * 3600).toPrecision(3)}/h, ${fmtPct(L.P_sys)}`;
+    const x = cell("x");
+    x.textContent = (L.x_lim < 0.01 ? L.x_lim.toPrecision(2) : L.x_lim.toFixed(3)) + (L.x_lim > 0.2 ? " ⚠ near the exchange limit" : "");
+    x.classList.toggle("flag", L.x_lim > 0.2);
+  });
+
+  // switch hint
+  const e = params.early_level, l = params.late_level;
+  const cr = R.envelope.crossings.find(c => (c.i === e && c.j === l) || (c.i === l && c.j === e));
+  $("swHint").innerHTML = e === l ? "Choose two different levels." : (cr
+    ? `${escHTML(label(e))} and ${escHTML(label(l))} cross at P* = ${fmtPct(cr.P)}, ` + (params.trigger === "auto" ? "where this switches." : "the automatic choice.")
+    : `${escHTML(label(e))} and ${escHTML(label(l))} don't cross below ${fmtPct(R.envelope.P_max)}.`) +
+    " The switch watches the pumping cell, as the optical polarimeter does.";
+  $("goalHint").textContent = `Goal: ${fmtPct(R.goal)} in the target. The best single level settles at ${fmtPct(R.best_ss_target)}.`;
+  $("tcHint").innerHTML = richHTML(`The target runs at ${fmtK(R.Tc)} K; G = ${fmtSci(R.G)} /s, N_t/N_p = ${(R.Nt / R.Np).toFixed(0)}, N_p/G = ${fmtTime(R.tau_x_pump_s)}.`);
+  $("exOne").innerHTML = `The target holds N<sub>t</sub>/N<sub>p</sub> = ${(R.Nt / R.Np).toFixed(0)} times as many atoms as the pumping cell, and the exchange turns the pumping cell over in N<sub>p</sub>/G = ${fmtTime(R.tau_x_pump_s)}, far faster than MEOP builds it up. The two cells then share nearly one polarization P, and`;
+
+  // results table
+  const rows = R.levels.map((L, i) => {
+    const sv = S.t_goal_s != null && L.t_goal_s != null ? (L.t_goal_s - S.t_goal_s) / L.t_goal_s : null;
+    return `<tr><td><i class="sw" style="background:${lvColor(i)}"></i> ${escHTML(L.label)} alone</td><td>${L.t_goal_s == null ? "never" : fmtTime(L.t_goal_s)}</td>` +
+      `<td>${sv == null ? "–" : (100 * sv).toFixed(1) + "%"}</td><td>${fmtPct(L.ss_target)}</td><td>${fmtPct(L.ss_pump)}</td></tr>`;
+  });
+  rows.push(`<tr class="sched"><td>Schedule<span class="d">${{ single: "single level", switch: "two-level switch", envelope: "following the envelope" }[S.mode]}</span></td>` +
+    `<td>${S.t_goal_s == null ? "never" : fmtTime(S.t_goal_s)}</td><td>${S.saved == null ? "–" : (100 * S.saved).toFixed(1) + "% vs best"}</td>` +
+    `<td>${fmtPct(S.ss_target)}</td><td>${fmtPct(S.ss_pump)}</td></tr>`);
+  $("resTable").innerHTML = `<tr><th>Run</th><th>To ${fmtPct(R.goal)}</th><th>Schedule saves</th><th>Final P<sub>t</sub></th><th>Final P<sub>p</sub></th></tr>` + rows.join("");
+  const rp = $("resPill");
+  rp.className = "pill " + (S.t_goal_s == null ? "bad" : S.saved > 1e-9 ? "good" : "warn");
+  rp.textContent = S.t_goal_s == null ? "Goal not reached" : S.saved > 1e-9 ? `${(100 * S.saved).toFixed(1)}% faster` : "No faster than one level";
+  $("plan").innerHTML = "<b>Schedule:</b> " + planText();
+
+  const w = $("warnings"); w.innerHTML = "";
+  (R.warnings || []).forEach(t => { const p = document.createElement("p"); p.textContent = t; w.appendChild(p); });
+
+  if (source === "python") {
+    setEngine("python", "Python · Pyodide " + PYO_VER, `Last run ${lastPyMs.toFixed(0)} ms`);
+    let d = Infinity;
+    try {
+      const js = computeJS();
+      const pick = o => [o.G, o.goal, o.best_ss_target, o.sched.t_goal_s, o.sched.ss_target, o.sched.P_target[o.sched.P_target.length - 1],
+        o.sched.P_pump[Math.floor(o.sched.P_pump.length / 2)], o.sched.switches.length,
+        ...o.sched.switches.map(x => x.t_s), ...o.levels.map(x => x.t_goal_s), ...o.levels.map(x => x.ss_target)];
+      const a = pick(R), b = pick(js);
+      d = a.length !== b.length ? Infinity : Math.max(0, ...a.map((v, i) => v === b[i] ? 0 : v == null || b[i] == null ? Infinity : Math.abs(v - b[i]) / Math.max(Math.abs(v), 1e-30)));
+    } catch (e) {}
+    jsAgrees = d < 1e-9;
+    $("srcStatus").textContent = `Ran in Python, ${lastPyMs.toFixed(0)} ms · ` + (jsAgrees
+      ? `JavaScript port agrees${d < 1e-12 ? " to machine precision" : ""}`
+      : `JavaScript port differs by ${(d * 100).toPrecision(2)}%, so previews wait for Python`);
+  }
+  drawCharts();
+}
+
+/* ---------------------------------------------------------------- charts */
+function fitCanvas(cv) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1), r = cv.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [r.width, r.height];
+}
+function niceStep(range, n) {
+  const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw)));
+  return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= raw) || 10 * p;
+}
+function timeTicks(tMax, pw) {
+  const nMax = Math.max(3, Math.min(8, Math.floor(pw / 60)));
+  const s = [0.05, 0.1, 0.25, 0.5, 1, 2, 3, 6, 12, 24, 48].find(s => tMax / s <= nMax) || 48;
+  return { step: s, fmt: t => (s < 1 ? t.toFixed(2).replace(/0$/, "") : t) + " h" };
+}
+function colors() {
+  const c = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), panel: css("--panel"), lv: [] };
+  for (let i = 1; i <= LEVEL_MAX; i++) c.lv.push(css("--lv" + i));
+  return c;
+}
+function haloText(ctx, t, x, y, bg) { ctx.save(); ctx.strokeStyle = bg; ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.strokeText(t, x, y); ctx.restore(); ctx.fillText(t, x, y); }
+const polCh = { cv: $("polChart"), hover: null, geom: null };
+const fCh = { cv: $("fChart"), hover: null, geom: null };
+function drawCharts() { drawPol(); drawF(); legends(); }
+function legends() {
+  if (!R) return;
+  const lv = R.levels.map((l, i) => `<span><i class="dash" style="color:${lvColor(i)}"></i>${escHTML(l.label)} alone</span>`).join("");
+  $("polLegend").innerHTML = `<span><i style="background:var(--warm)"></i>Pumping cell</span><span><i style="background:var(--cold)"></i>Target cell</span>` + lv +
+    `<span><i class="dash" style="color:var(--muted)"></i>Goal</span>`;
+  $("fLegend").innerHTML = R.levels.map((l, i) => `<span><i style="background:${lvColor(i)}"></i>${escHTML(l.label)}</span>`).join("") +
+    `<span><i class="band" style="background:color-mix(in srgb, var(--ink) 22%, transparent)"></i>Envelope</span>` +
+    `<span><i class="mk" style="background:var(--ink)"></i>Crossover</span><span><i class="dash" style="color:var(--muted)"></i>Target relaxation</span>`;
+}
+
+// Polarization against time: the schedule (solid), each level alone (dashed, target cell only),
+// the goal, and a strip under the axis showing which level is on.
+function drawPol() {
+  const ch = polCh, [W, H] = fitCanvas(ch.cv), ctx = ch.cv.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+  if (!R) return;
+  const col = colors(), S = R.sched;
+  const m = { l: 46, r: 14, t: 10, b: 66 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const tMax = R.t_h[R.t_h.length - 1];
+  const all = [R.goal, ...S.P_pump, ...S.P_target, ...R.single_P_target.flat()];
+  const yMaxRaw = Math.max(0.05, ...all) * 100, yStep = yMaxRaw > 40 ? 10 : yMaxRaw > 15 ? 5 : yMaxRaw > 6 ? 2 : 1;
+  const yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const X = t => m.l + (t / tMax) * pw, Y = v => m.t + ph - (Math.max(0, v) * 100 / yMax) * ph;
+  ch.geom = { m, pw, tMax };
+  ctx.font = `11px ${css("--font-mono")}`; ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = 0; v <= yMax + 1e-9; v += yStep) {
+    const y = Y(v / 100); ctx.strokeStyle = col.line; ctx.globalAlpha = v === 0 ? 1 : 0.55;
+    ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = col.muted; ctx.fillText(v + "%", m.l - 6, y);
+  }
+  const tk = timeTicks(tMax, pw);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let t = 0; t <= tMax + 1e-9; t += tk.step) ctx.fillText(tk.fmt(+t.toFixed(6)), X(t), m.t + ph + 7);
+  // switch times
+  S.switches.forEach(w => {
+    const th = w.t_s / 3600; if (th <= 0 || th >= tMax) return;
+    ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.25; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(X(th), m.t); ctx.lineTo(X(th), m.t + ph); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
+  // goal
+  if (R.goal * 100 <= yMax) {
+    ctx.strokeStyle = col.muted; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(m.l, Y(R.goal)); ctx.lineTo(m.l + pw, Y(R.goal)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = col.muted; ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.font = `11px ${css("--font-mono")}`;
+    haloText(ctx, `goal ${fmtPct(R.goal)}`, m.l + 4, Y(R.goal) - 3, col.panel);
+  }
+  const line = (t, y, c, w, dash, a) => {
+    ctx.strokeStyle = c; ctx.lineWidth = w; ctx.setLineDash(dash || []); ctx.globalAlpha = a || 1; ctx.lineJoin = "round"; ctx.beginPath();
+    y.forEach((v, i) => { const x = X(t[i]), yy = Y(v); i ? ctx.lineTo(x, yy) : ctx.moveTo(x, yy); }); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  };
+  R.single_P_target.forEach((y, i) => line(R.t_h, y, col.lv[i], 1.6, [6, 4], 0.9));
+  line(S.t_h, S.P_pump, col.warm, 2);
+  line(S.t_h, S.P_target, col.cold, 2.4);
+  // where each run reaches the goal
+  const mark = (t_s, c, ring) => {
+    if (t_s == null || t_s / 3600 > tMax) return;
+    ctx.beginPath(); ctx.arc(X(t_s / 3600), Y(R.goal), ring ? 4 : 5, 0, 7);
+    if (ring) { ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.fillStyle = col.panel; ctx.fill(); ctx.stroke(); }
+    else { ctx.fillStyle = c; ctx.fill(); ctx.strokeStyle = col.panel; ctx.lineWidth = 2; ctx.stroke(); }
+  };
+  R.levels.forEach((l, i) => mark(l.t_goal_s, col.lv[i], true));
+  mark(S.t_goal_s, col.cold, false);
+  // active-level strip
+  const sy = m.t + ph + 26, sh = 12;
+  ctx.font = `600 11.5px ${css("--font-display")}`; ctx.fillStyle = col.muted; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  ctx.fillText("ON", m.l - 6, sy + sh / 2);
+  S.segments.forEach(sg => {
+    const a = Math.min(tMax, sg.t0_s / 3600), b = sg.t1_s == null ? tMax : Math.min(tMax, sg.t1_s / 3600);
+    if (b <= a) return;
+    const x0 = X(a) + (a > 0 ? 1 : 0), x1 = X(b) - (b < tMax ? 1 : 0);      // 2px surface gap between segments
+    ctx.fillStyle = col.lv[sg.level]; ctx.beginPath(); ctx.roundRect(x0, sy, Math.max(1, x1 - x0), sh, 3); ctx.fill();
+    ctx.font = `12px ${css("--font-body")}`; ctx.fillStyle = col.ink; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const txt = label(sg.level);
+    if (ctx.measureText(txt).width + 8 < x1 - x0) ctx.fillText(txt, (x0 + x1) / 2, sy + sh + 4);
+  });
+  // hover
+  const h = ch.hover, rd = $("polRead");
+  if (h == null) { rd.textContent = "Hover or tap the chart to read values"; return; }
+  let k = 0, best = Infinity;
+  S.t_h.forEach((t, i) => { const d = Math.abs(t - h); if (d < best) { best = d; k = i; } });
+  const t = S.t_h[k], xp = X(t);
+  ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xp, m.t); ctx.lineTo(xp, m.t + ph); ctx.stroke(); ctx.globalAlpha = 1;
+  [[S.P_pump[k], col.warm], [S.P_target[k], col.cold]].forEach(([v, c]) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(xp, Y(v), 4, 0, 7); ctx.fill(); });
+  const seg = S.segments.filter(sg => sg.t0_s / 3600 <= t + 1e-12).pop() || S.segments[0];
+  const j = Math.round(t / tMax * (R.t_h.length - 1));
+  rd.innerHTML = `t = ${t < 1 ? (t * 60).toFixed(0) + " min" : t.toFixed(2) + " h"} · <b>${escHTML(label(seg.level))}</b> on · pump <b>${fmtPct(S.P_pump[k])}</b> · target <b>${fmtPct(S.P_target[k])}</b>` +
+    R.levels.map((l, i) => ` · ${escHTML(l.label)} alone ${fmtPct(R.single_P_target[i][j])}`).join("");
+}
+
+// Production per pumping-cell atom against polarization, in %/min.
+function drawF() {
+  const ch = fCh, [W, H] = fitCanvas(ch.cv), ctx = ch.cv.getContext("2d");
+  ctx.clearRect(0, 0, W, H);
+  if (!R) return;
+  const col = colors(), E = R.envelope, Pmax = E.P_max * 100;
+  const f = (i, P) => (R.levels[i].f0 - R.levels[i].slope * P / 100) * 6000;      // %/min at P in %
+  const m = { l: 46, r: 14, t: 12, b: 36 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const yMaxRaw = Math.max(...R.levels.map(l => l.f0)) * 6000 * 1.06, yStep = niceStep(yMaxRaw, 5), yMax = Math.ceil(yMaxRaw / yStep) * yStep;
+  const xStep = Pmax > 40 ? 10 : 5, xMax = Math.ceil(Pmax / xStep) * xStep;
+  const X = P => m.l + P / xMax * pw, Y = v => m.t + ph - Math.max(0, Math.min(v, yMax)) / yMax * ph;
+  ch.geom = { m, pw, xMax };
+  ctx.font = `11px ${css("--font-mono")}`; ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = 0; v <= yMax + 1e-9; v += yStep) {
+    ctx.strokeStyle = col.line; ctx.globalAlpha = v === 0 ? 1 : 0.55;
+    ctx.beginPath(); ctx.moveTo(m.l, Y(v)); ctx.lineTo(m.l + pw, Y(v)); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = col.muted; ctx.fillText(+v.toPrecision(3) + "", m.l - 6, Y(v));
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let P = 0; P <= xMax + 1e-9; P += xStep) ctx.fillText(P + "%", X(P), m.t + ph + 7);
+  ctx.font = `12px ${css("--font-body")}`;
+  ctx.fillText("Pumping-cell polarization", m.l + pw / 2, m.t + ph + 21);
+  ctx.save(); ctx.translate(11, m.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = "middle"; ctx.fillText("%/min", 0, 0); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t - 2, pw, ph + 4); ctx.clip();
+  // envelope band underneath
+  ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.18; ctx.lineWidth = 9; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.beginPath();
+  E.pieces.forEach(([a, b, i], k) => { const pa = a * 100, pb = b * 100; if (!k) ctx.moveTo(X(pa), Y(f(i, pa))); ctx.lineTo(X(pb), Y(f(i, pb))); });
+  ctx.stroke(); ctx.globalAlpha = 1; ctx.lineCap = "butt";
+  // target relaxation per pumping-cell atom
+  ctx.strokeStyle = col.muted; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(xMax), Y(R.loss_slope * xMax / 100 * 6000)); ctx.stroke(); ctx.setLineDash([]);
+  // the levels
+  R.levels.forEach((l, i) => {
+    ctx.strokeStyle = col.lv[i]; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.moveTo(X(0), Y(f(i, 0))); ctx.lineTo(X(l.M_ss), Y(0)); ctx.stroke();
+  });
+  // a fixed switch point
+  if (R.sched.mode === "switch" && params.trigger === "P" && R.sched.P_switch != null) {
+    const xs = X(R.sched.P_switch * 100);
+    ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.5; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xs, m.t); ctx.lineTo(xs, m.t + ph); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  // crossovers: filled on the envelope, rings off it
+  ctx.font = `500 11.5px ${css("--font-mono")}`; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  E.crossings.forEach(c => {
+    const x = X(c.P * 100), y = Y(c.f * 6000);
+    ctx.beginPath(); ctx.arc(x, y, c.on_envelope ? 5 : 3.5, 0, 7);
+    if (c.on_envelope) { ctx.fillStyle = col.ink; ctx.fill(); ctx.strokeStyle = col.panel; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = col.ink; haloText(ctx, `P* ${fmtPct(c.P)}`, x + 8, y - 4, col.panel); }
+    else { ctx.fillStyle = col.panel; ctx.fill(); ctx.strokeStyle = col.muted; ctx.lineWidth = 1.5; ctx.stroke(); }
+  });
+  // direct labels at the left end of each line, nudged apart
+  ctx.font = `12px ${css("--font-body")}`; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  const lab = R.levels.map((l, i) => ({ i, y: Y(f(i, 0)) })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < lab.length; k++) if (lab[k].y - lab[k - 1].y < 14) lab[k].y = lab[k - 1].y + 14;
+  lab.forEach(({ i, y }) => { ctx.fillStyle = col.ink; haloText(ctx, R.levels[i].label, m.l + 8, y + 9, col.panel); });
+  // hover
+  const h = ch.hover, rd = $("fRead");
+  if (h == null) { rd.textContent = "Hover or tap the chart to read values"; return; }
+  const xp = X(h);
+  ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xp, m.t); ctx.lineTo(xp, m.t + ph); ctx.stroke(); ctx.globalAlpha = 1;
+  let bi = 0;
+  R.levels.forEach((l, i) => { const v = f(i, h); if (v > f(bi, h)) bi = i; if (v > 0) { ctx.fillStyle = col.lv[i]; ctx.beginPath(); ctx.arc(xp, Y(v), 4, 0, 7); ctx.fill(); } });
+  rd.innerHTML = `P = ${h.toFixed(1)}% · ` + R.levels.map((l, i) => `${escHTML(l.label)} ${f(i, h).toFixed(2)}`).join(" · ") +
+    ` %/min · relaxation ${(R.loss_slope * h / 100 * 6000).toFixed(2)} · best: <b>${escHTML(label(bi))}</b>`;
+}
+function pickPol(ev) {
+  if (!R || !polCh.geom) return;
+  const r = polCh.cv.getBoundingClientRect(), g = polCh.geom;
+  polCh.hover = Math.max(0, Math.min(1, (ev.clientX - r.left - g.m.l) / g.pw)) * g.tMax;
+  drawPol();
+}
+function pickF(ev) {
+  if (!R || !fCh.geom) return;
+  const r = fCh.cv.getBoundingClientRect(), g = fCh.geom;
+  fCh.hover = Math.max(0, Math.min(1, (ev.clientX - r.left - g.m.l) / g.pw)) * g.xMax;
+  drawF();
+}
+[[polCh, pickPol, drawPol], [fCh, pickF, drawF]].forEach(([ch, pick, draw]) => {
+  ch.cv.addEventListener("pointermove", pick);
+  ch.cv.addEventListener("pointerdown", pick);
+  ch.cv.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { ch.hover = null; draw(); } });
+});
+window.addEventListener("resize", () => drawCharts());
+try { new MutationObserver(() => drawCharts()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => drawCharts());
+
+/* ---------------------------------------------------------------- boot */
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = src; s.crossOrigin = "anonymous";
+    s.onload = () => res(); s.onerror = () => rej(new Error("could not load " + src));
+    document.head.appendChild(s);
+  });
+}
+const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(what + " timed out")), ms))]);
+async function bootPython() {
+  setEngine("loading", "Loading Python…");
+  const errors = [];
+  let src = "";
+  try {
+    const r = await fetch("he3_model.py", { cache: "no-cache" });
+    if (!r.ok) throw new Error("he3_model.py was not found next to the page");
+    src = await r.text();
+  } catch (e) {
+    errors.push(location.protocol === "file:"
+      ? "open this page through a web server (for example python3 -m http.server) so it can read he3_model.py" : e.message);
+  }
+  if (!src) return fallBack(errors);
+  try {
+    if (typeof window.loadPyodide !== "function") await withTimeout(loadScript(CDN_FULL + "pyodide.js"), 30000, "pyodide.js download");
+    setEngine("loading", "Starting Python…", "Downloading and starting the Pyodide runtime from " + CDN_FULL);
+    const inst = await withTimeout(window.loadPyodide({ indexURL: CDN_FULL, stdout: () => {}, stderr: () => {} }), 60000, "Pyodide start");
+    inst.runPython(src);
+    py = inst; pyRun = py.globals.get("run_schedule");
+  } catch (e) { errors.push(e.message || String(e)); }
+  if (py) {
+    try { show(computePy(), "python"); }
+    catch (e) { py = null; errors.push("model error: " + (e.message || e)); fallBack(errors); }
+  } else fallBack(errors);
+}
+function fallBack(errors) {
+  setEngine("js", "JavaScript port", "Python could not start here: " + errors.join("; "));
+  $("srcStatus").textContent = "Python could not start here (" + errors.join("; ") + "), so the page runs its JavaScript port of this model.";
+}
+
+renderLevels();
+syncInputs();
+previewJS(null);
+bootPython();
+})();
+</script>
+</body>
+</html>
