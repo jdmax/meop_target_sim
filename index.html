@@ -234,6 +234,7 @@ table.loads tr.sum td { border-top: 1px solid var(--line); font-weight: 600; }
 @media (max-width: 900px) { .mapgrid { grid-template-columns: minmax(0, 1fr); } }
 .mapgrid figure { margin: 0; min-width: 0; }
 #mapChart { display: block; width: 100%; height: 360px; touch-action: pan-y; cursor: crosshair; }
+#lagChart { display: block; width: 100%; height: 320px; touch-action: pan-y; cursor: crosshair; }
 .legend i.mk { width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; }
 .legend i.ring { background: none !important; border: 2px solid; }
 .hint.bad { color: var(--bad); }
@@ -399,6 +400,23 @@ footer.site a { color: var(--accent); }
               <div class="section-head"><h2>Cooler</h2><span class="pill" id="cPill"></span></div>
               <dl class="facts" id="cFacts"></dl>
               <p class="hint">Near-vertical lines hold the first-stage load fixed (labels along the top); near-horizontal lines hold the second-stage load fixed (labels at the left). Read from Cryomech's PT420-RM reference capacity chart (50 and 60 Hz) and interpolated between its points. The certified performance is a little lower, 1.8 W at 4.2 K with 50 W at 45 K, so derate with the cooler performance setting below.</p>
+            </div>
+          </div>
+        </section>
+        <section class="card" aria-label="Gas temperature in the tubes">
+          <div class="chart-head">
+            <h2 id="lagTitle">Gas temperature in the tubes</h2>
+            <div class="legend" id="lagLegend"></div>
+          </div>
+          <div class="mapgrid">
+            <figure>
+              <canvas id="lagChart" role="img" aria-label="Wall and gas temperature along each tube, from the target cell to the pumping cell"></canvas>
+              <div class="tread" id="lagRead"></div>
+            </figure>
+            <div>
+              <div class="section-head"><h2>Gas against the wall</h2><span class="pill" id="lagPill"></span></div>
+              <dl class="facts" id="lagFacts"></dl>
+              <p class="hint">An estimate. The model takes the gas at the wall temperature; here the flowing gas instead exchanges heat with the model's wall profile as laminar flow does (Nusselt number 3.66), catching up over a length λ = ṁc<sub>p</sub>/(Nu·π·k<sub>gas</sub>) that grows as the gas gets colder. The wall profile is held fixed, and heat transfer is faster than this where the flow is still developing, so the lags are probably somewhat overstated.</p>
             </div>
           </div>
         </section>
@@ -774,6 +792,7 @@ function show(res, source) {
     `<div><span style="color:var(--muted)">${richHTML("a = τ_x/T_{1t},  b = (N_t/N_p)·T_b/T_{1t};  P_t = M_ss/(1 + a + b)")}</span></div>`;
 
   showHeat();
+  showLag();
   showFormulas();
   engineHint();
 
@@ -827,7 +846,9 @@ function show(res, source) {
   drawCharts();
 }
 /* ---------------------------------------------------------------- heat tab */
-const HCAT = { cond: ["--h-cond", "Conduction"], engine: ["--h-engine", "Engine clamp"], rad: ["--h-rad", "Radiation"], other: ["--h-other", "Other"] };
+// [CSS background, name]; heat the loop's gas carries is the conduction colour with stripes, so it needs no fifth hue
+const HCAT = { cond: ["var(--h-cond)", "Conduction"], circ: ["repeating-linear-gradient(135deg, var(--h-cond) 0 2.5px, transparent 2.5px 5px)", "Gas carried by the loop"],
+  engine: ["var(--h-engine)", "Engine clamp"], rad: ["var(--h-rad)", "Radiation"], other: ["var(--h-other)", "Other"] };
 function fmtP(w) {                      // a power in W, from microwatts to watts
   const a = Math.abs(w), mW = w * 1e3;
   if (a === 0) return "0";
@@ -840,21 +861,33 @@ function fmtP(w) {                      // a power in W, from microwatts to watt
 const fmtK = v => String(+(+v).toPrecision(3));   // a temperature in K, to three figures
 function fmtW(w) { return (w >= 10 ? w.toFixed(0) : w >= 1 ? String(+w.toFixed(1)) : String(+w.toFixed(2))) + " W"; }
 // [category, label, watts, detail] for each stage; shared by the page and the saved figure
+// Heat the circulating gas carries to clamp k [W]: the clamp heat with the flow, less the same tubes with no flow.
+const circHeat = k => (R.heat_mW[k] - R.heat_still_mW[k]) / 1e3;
 function stageRows() {
   const S = R.stages, P = params, conv = P.mode === "loop", tubes = R.legs.length > 1 ? "both tubes" : "the tube";
-  const second = [["cond", "Conduction into the target cell and cold clamps", S.second.conduction,
-    `Glass and gas conduction down ${tubes}` + (conv ? ", plus the enthalpy the loop carries down" : "")]];
+  const flows = conv && R.mdot_mg_h !== 0, cc = flows ? circHeat("cold") : 0;
+  const second = [["cond", "Conduction into the target cell and cold clamps", S.second.conduction - cc,
+    `Glass and gas conduction down ${tubes}` + (flows ? ", as it would be with no flow" : "")]];
+  if (flows) second.push(["circ", "Gas cooled by the loop", cc, cc >= 0
+    ? "The downcomer's gas reaches the cold clamps still carrying heat, beyond what conduction alone brings down"
+    : "The rising gas carries heat away from the cold clamps, so less reaches them than conduction alone brings"]);
   if (S.second.engine > 0) second.push(["engine", `Engine clamp at ${fmtK(R.T_engine)} K`, S.second.engine,
     "The engine sits below the riser's natural temperature, so its clamp removes heat"]);
   second.push(["rad", "Radiation from the shield", S.second.radiation, `${P.A_cold_cm2} cm², ε = ${P.eps_cold}, ${fmtK(R.T_shield)} K → ${fmtK(R.Tc)} K`]);
   second.push(["rad", "Radiation down the tube bores", S.second.bore, `Direct line of sight from the ${P.Th} K end of ${tubes}`]);
   second.push(["other", "Other second-stage loads", S.second.other, "Supports, wiring, NMR leads"]);
   const first = [];
-  if (P.intercept) first.push(["cond", `Intercept at ${P.T_int} K`, S.first.intercept,
-    `Conduction down the warm part of the ${conv ? "downcomer" : "tube"}, removed ${P.s_int_cm} cm above the target`]);
-  if (S.first.engine !== 0) first.push(["engine", `Riser engine at ${fmtK(R.T_engine)} K`, S.first.engine, S.first.engine < 0
+  if (P.intercept) {
+    const ic = flows ? Math.min(S.first.intercept, Math.max(0, R.heat_still_mW.intercept / 1e3)) : S.first.intercept;
+    first.push(["cond", `Intercept at ${P.T_int} K, conduction`, ic,
+      `Conduction down the warm part of the ${conv ? "downcomer" : "tube"}, removed ${P.s_int_cm} cm above the target` + (flows ? ", as it would be with no flow" : "")]);
+    if (flows && S.first.intercept - ic !== 0) first.push(["circ", `Intercept at ${P.T_int} K, gas cooled by the loop`, S.first.intercept - ic,
+      "The downcomer's gas, cooling from the pumping cell, gives up this heat at the intercept"]);
+  }
+  const ce = flows ? circHeat("engine") : 0, engineNote = flows && ce !== 0 ? `; with no flow it would ${R.heat_still_mW.engine >= 0 ? "remove" : "need"} ${fmtP(Math.abs(R.heat_still_mW.engine / 1e3))}, and warming the rising gas costs ${fmtP(-ce)}` : "";
+  if (S.first.engine !== 0) first.push(["engine", `Riser engine at ${fmtK(R.T_engine)} K`, S.first.engine, (S.first.engine < 0
     ? "The stage holds the engine section and feeds it the heat that drives the loop, which lowers this stage's load"
-    : "The stage holds the engine section, which sits below the riser's natural temperature, so it removes heat"]);
+    : "The stage holds the engine section, which sits below the riser's natural temperature, so it removes heat") + engineNote]);
   first.push(["rad", "Radiation onto the shield", S.first.radiation, `${P.A_shield_m2} m², ε = ${P.eps_shield}, ${P.Th} K → ${fmtK(R.T_shield)} K`]);
   first.push(["other", "Other first-stage loads", S.first.other, "Supports, wiring"]);
   return { first, second };
@@ -874,14 +907,14 @@ function fillStage(id, name, T, total, rows, o) {
   const cats = Object.keys(HCAT).filter(c => byCat[c] > 0), bar = $(id + "Bar");
   bar.classList.toggle("over", over);
   bar.innerHTML = cats.map(c =>
-    `<span style="flex:0 0 ${(100 * byCat[c] / span).toFixed(3)}%;background:var(${HCAT[c][0]})" title="${HCAT[c][1]}: ${fmtP(byCat[c])}"></span>`).join("");
+    `<span style="flex:0 0 ${(100 * byCat[c] / span).toFixed(3)}%;background:${HCAT[c][0]}" title="${HCAT[c][1]}: ${fmtP(byCat[c])}"></span>`).join("");
   bar.setAttribute("aria-label", `${name}: ${fmtP(total)}` + (floats ? `; the chart runs to ${fmtP(cap)}. ` : ` of ${cap > 0 ? fmtP(cap) : "no"} capacity. `) +
     cats.map(c => `${HCAT[c][1]} ${fmtP(byCat[c])}`).join(", "));
   $(id + "Scale").innerHTML = "<span>0</span>" + (floats ? `<span>${fmtP(cap)}, edge of the chart</span>`
     : over ? `<span>load ${fmtP(total)} · capacity ${cap > 0 ? fmtP(cap) : "none"}</span>`
     : (o.rest ? `<span>${o.rest}</span>` : "") + `<span>${fmtP(cap)}</span>`);
   $(id + "Rows").innerHTML = rows.map(([c, label, w, d]) =>
-    `<tr><td><i style="background:var(${HCAT[c][0]})"></i>${escHTML(label)}<span class="d">${richHTML(d)}</span></td><td>${fmtP(w)}</td></tr>`).join("") +
+    `<tr><td><i style="background:${HCAT[c][0]}"></i>${escHTML(label)}<span class="d">${richHTML(d)}</span></td><td>${fmtP(w)}</td></tr>`).join("") +
     `<tr class="sum"><td>Total</td><td>${fmtP(total)}</td></tr>`;
 }
 // [text, color, marker]: marker is "dot", "ring" or a dash pattern; shared by the page legend and the saved figure
@@ -901,8 +934,12 @@ function showHeat() {
   if (C.map) other.push([`Trim heater, second stage`, C.trim > 0 ? fmtP(C.trim) : "off"]);
   if (P.mode === "loop" && P.engine) other.push(P.engine_stage ? ["Riser engine heater, first stage holds it", "none"]
     : S.engine_heater > 0 ? [`Riser engine heater at ${fmtK(R.T_engine)} K`, fmtP(S.engine_heater)] : ["Riser engine heater", "none needed"]);
+  const flowing = P.mode === "loop" && R.mdot_mg_h !== 0;
+  if (flowing && P.engine && !P.engine_stage && S.engine_heater > 0)
+    other.push(["  of which rewarming the loop's gas", fmtP(Math.min(S.engine_heater, Math.max(0, -circHeat("engine"))))]);
   if (S.intercept_heater > 0) other.push([`Intercept heater at ${P.T_int} K`, fmtP(S.intercept_heater)]);
   other.push(["Heat supplied at the warm end (pumping cell)", fmtP(S.warm_supply)]);
+  if (flowing) other.push(["  of which rewarming the loop's gas", fmtP(-circHeat("warm"))]);
   fillFacts($("hOther"), other);
 
   // cooler card, rail hints
@@ -943,6 +980,9 @@ function showHeat() {
       ? `The intercept removes the heat conducted down the warm part of its tube, so that heat never reaches the target. It is assumed to be tied to the first stage.`
       : "With the intercept off, the first stage carries only the shield's radiation and the other loads you enter.") +
       (P.mode === "loop" && P.engine && P.engine_stage ? ` The riser engine is tied to the stage too and sits at its temperature, ${fmtK(R.T_engine)} K; when the riser section needs heat to stay there, the stage supplies it and its load drops by that much, so no heater is needed.` : ""),
+    "<b>Gas carried by the loop</b> (striped) is the heat the circulating gas moves between the clamps: the clamp heats with the flow, less those of the same tubes solved with no flow. " +
+      "Gas coming down the downcomer gives up heat at the intercept and the cold clamps as it cools; on the way up the riser it is rewarmed by the engine and the warm end. " +
+      "Diffusion moves polarization without any net flow, so in a single tube there is none.",
     "<b>Radiation</b> is " + richHTML("σεA(T_{hot}^{4} − T_{cold}^{4}) with an effective emissivity for each pair of surfaces. Multilayer insulation between 300 K and the shield typically passes 0.5–1.5 W/m², an effective emissivity of about 0.001–0.003; bare polished metal at the second stage is nearer 0.02–0.05."),
     "<b>Radiation down the bores</b> counts only the direct line of sight from the warm end of each tube to the target, treated as two coaxial disks the size of the bore, separated by the tube length. Radiation absorbed and re-emitted by the glass walls is not modeled; glass is nearly opaque in the thermal infrared, so the walls intercept most of it.",
     "<b>The cooler.</b> With the PT420 map on, the first stage floats at the temperature the chart gives for the two loads, and a trim heater holds the second stage at the target set point. When the loads alone keep the second stage warmer than the set point, the target runs at that temperature instead, and the whole model (gas exchange, densities, polarization) uses it. The target cell is assumed to sit at the second-stage temperature; any drop across the link between them is not modeled. With the map off, both temperatures are fixed and the map gives the capacity at each.",
@@ -1050,6 +1090,113 @@ function mapPick(ev) {
 mapCh.cv.addEventListener("pointermove", mapPick);
 mapCh.cv.addEventListener("pointerdown", mapPick);
 mapCh.cv.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { mapCh.hover = null; drawMap(); } });
+
+/* ---------------------------------------------------------------- gas temperature against the wall */
+// Wall (solid) and gas (dashed) temperature along each tube from the target cell, on a log temperature axis.
+const lagCh = { cv: $("lagChart"), hover: null, geom: null };
+const LAG_NAMES = ["Riser", "Downcomer"];
+function lagLegend(col) {
+  return R.lag ? R.lag.legs.flatMap((_, i) => [[LAG_NAMES[i] + " wall", i ? col.cold : col.warm, null], [LAG_NAMES[i] + " gas", i ? col.cold : col.warm, [6, 4]]]) : [];
+}
+function drawLag() {
+  const [W, H] = fitCanvas(lagCh.cv), ctx = lagCh.cv.getContext("2d"); ctx.clearRect(0, 0, W, H);
+  if (!R) return;
+  const col = { ink: css("--ink"), muted: css("--muted"), line: css("--line"), warm: css("--warm"), cold: css("--cold"), panel: css("--panel") };
+  const lag = R.lag, rd = $("lagRead");
+  if (!lag) {
+    ctx.fillStyle = col.muted; ctx.font = `13px ${css("--font-body")}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("No net flow, so the gas sits at the wall temperature.", W / 2, H / 2);
+    rd.textContent = ""; lagCh.geom = null; return;
+  }
+  const Lc = R.legs[0].length_cm, all = lag.legs.flatMap(g => g.profile.flatMap(p => [p[1], p[2]]));
+  const lo = Math.log(Math.max(1.5, Math.min(...all) * 0.85)), hi = Math.log(Math.max(...all) * 1.12);
+  const m = { l: 54, r: 14, t: 18, b: 42 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const X = sv => m.l + sv / Lc * pw, Y = T => m.t + ph - (Math.log(T) - lo) / (hi - lo) * ph;
+  lagCh.geom = { m, pw, ph, Lc };
+  // clamp sections, from the tube nodes: the riser's engine, the downcomer's cold clamp, and the intercept
+  R.legs.forEach((leg, i) => {
+    let sv = 0;
+    leg.nodes.forEach(([Tn, cl, kind], ni) => {
+      if (kind === "engine" || (kind === "cold" && cl > 0)) {
+        ctx.fillStyle = i ? col.cold : col.warm; ctx.globalAlpha = 0.08; ctx.fillRect(X(sv), m.t, X(sv + cl) - X(sv), ph); ctx.globalAlpha = 1;
+        ctx.fillStyle = col.muted; ctx.font = `10.5px ${css("--font-mono")}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
+        haloText(ctx, kind === "engine" ? "engine" : "cold clamp", X(sv + cl / 2), m.t + 2 + 12 * i, col.panel);
+      } else if (kind === "intercept") {
+        ctx.strokeStyle = col.muted; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(X(sv), m.t); ctx.lineTo(X(sv), m.t + ph); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = col.muted; ctx.font = `10.5px ${css("--font-mono")}`; ctx.textAlign = "left"; ctx.textBaseline = "top";
+        haloText(ctx, "intercept", X(sv) + 4, m.t + 2 + 12 * i, col.panel);
+      }
+      sv += cl + (ni < leg.free_cm.length ? leg.free_cm[ni] : 0);
+    });
+  });
+  // grid and axes
+  ctx.font = `11px ${css("--font-mono")}`; ctx.lineWidth = 1; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  [1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300].filter(T => Math.log(T) >= lo && Math.log(T) <= hi).forEach(T => {
+    ctx.strokeStyle = col.line; ctx.globalAlpha = 0.55; ctx.beginPath(); ctx.moveTo(m.l, Y(T)); ctx.lineTo(m.l + pw, Y(T)); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = col.muted; ctx.fillText(T + " K", m.l - 6, Y(T));
+  });
+  const xs = Lc > 8 ? 2 : Lc > 3 ? 1 : 0.5;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let sv = 0; sv <= Lc + 1e-9; sv += xs) ctx.fillText(String(+sv.toFixed(1)), X(sv), m.t + ph + 6);
+  ctx.strokeStyle = col.line; ctx.beginPath(); ctx.moveTo(m.l, m.t + ph); ctx.lineTo(m.l + pw, m.t + ph); ctx.stroke();
+  ctx.font = `12px ${css("--font-body")}`; ctx.fillStyle = col.muted;
+  ctx.fillText("Distance along the tube from the target cell (cm)", m.l + pw / 2, m.t + ph + 22);
+  // wall and gas along each tube
+  lag.legs.forEach((g, i) => {
+    [[1, null], [2, [6, 4]]].forEach(([c, dash]) => {
+      ctx.strokeStyle = i ? col.cold : col.warm; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.setLineDash(dash || []);
+      ctx.beginPath(); g.profile.forEach((p, k) => ctx[k ? "lineTo" : "moveTo"](X(p[0]), Y(p[c]))); ctx.stroke(); ctx.setLineDash([]);
+    });
+  });
+  // hover: both tubes at one distance
+  const h = lagCh.hover;
+  if (!h) { rd.textContent = "Hover or tap the chart to read the wall and gas temperatures at any point along the tubes."; return; }
+  const sv = Math.max(0, Math.min(Lc, (h - m.l) / pw * Lc));
+  ctx.strokeStyle = col.ink; ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.moveTo(X(sv), m.t); ctx.lineTo(X(sv), m.t + ph); ctx.stroke(); ctx.globalAlpha = 1;
+  rd.innerHTML = `${sv.toFixed(2)} cm from the target cell: ` + lag.legs.map((g, i) => {
+    const p = g.profile.reduce((a, b) => Math.abs(b[0] - sv) < Math.abs(a[0] - sv) ? b : a);
+    [1, 2].forEach(c => { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[c]), 4, 0, 7); ctx.fillStyle = i ? col.cold : col.warm; ctx.fill(); ctx.strokeStyle = col.panel; ctx.lineWidth = 2; ctx.stroke(); });
+    return `${LAG_NAMES[i].toLowerCase()} wall <b>${p[1].toFixed(1)} K</b>, gas <b>${p[2].toFixed(1)} K</b>`;
+  }).join(" · ");
+}
+function lagPick(ev) {
+  if (!R || !lagCh.geom) return;
+  const r = lagCh.cv.getBoundingClientRect(), g = lagCh.geom, x = ev.clientX - r.left;
+  lagCh.hover = x >= g.m.l && x <= g.m.l + g.pw ? x : null;
+  drawLag();
+}
+lagCh.cv.addEventListener("pointermove", lagPick);
+lagCh.cv.addEventListener("pointerdown", lagPick);
+lagCh.cv.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") { lagCh.hover = null; drawLag(); } });
+function showLag() {
+  const lag = R.lag, pill = $("lagPill"), rows = [];
+  $("lagLegend").innerHTML = lagLegend({ warm: "var(--warm)", cold: "var(--cold)" }).map(([t, c, d]) =>
+    `<span><i class="${d ? "dash" : ""}" style="${d ? "color" : "background"}:${c}"></i>${t}</span>`).join("");
+  if (!lag) {
+    pill.className = "pill good"; pill.textContent = "No flow";
+    fillFacts($("lagFacts"), [["With no net flow (single tube, or a loop with no drive) the gas only diffuses, at the wall temperature.", ""]]);
+    return;
+  }
+  const worst = Math.max(...lag.legs.map(g => Math.abs(g.max_K))), dn = lag.legs.find(g => !g.up), upl = lag.legs.find(g => g.up);
+  const mk = (g, kind, pick) => g.marks.filter(x => x[0] === kind && pick(x))[0];
+  // gas temperature, with the wall's beside it
+  const gw = (g, w) => `${fmtK(g)} K / ${fmtK(w)}`;
+  rows.push(["Catch-up length λ at T_c", lag.lam_cold_mm.toFixed(1) + " mm"]);
+  lag.legs.forEach((g, i) => rows.push([`${LAG_NAMES[i]}, largest lag at ${g.s_max_cm.toFixed(1)} cm`, `${g.max_K >= 0 ? "+" : "−"}${Math.abs(g.max_K).toFixed(1)} K`]));
+  rows.push(["Gas / wall temperature:", ""]);
+  const icp = mk(dn, "intercept", () => true), cold = mk(dn, "cold", x => x[1] > 0), eng = mk(upl, "engine", () => true);
+  if (icp) rows.push(["  falling gas at the intercept", gw(icp[3], icp[2])]);
+  if (cold) rows.push(["  entering the cold clamp", gw(cold[3], cold[2])]);
+  rows.push(["  reaching the target cell", gw(dn.arrive_K, dn.arrive_wall_K)]);
+  if (eng) rows.push(["  rising gas entering the engine", gw(eng[3], eng[2])]);
+  rows.push(["  reaching the pumping cell", gw(upl.arrive_K, upl.arrive_wall_K)]);
+  if (icp) rows.push(["Heat carried past the intercept", fmtP(lag.past_intercept_W)]);
+  fillFacts($("lagFacts"), rows);
+  const arrive = dn.arrive_K - dn.arrive_wall_K;
+  pill.className = "pill " + (worst < 2 && arrive < 0.2 ? "good" : worst < 10 && arrive < 1 ? "warn" : "bad");
+  pill.textContent = worst < 2 && arrive < 0.2 ? "Gas follows the wall" : `Gas lags by up to ${worst.toFixed(0)} K`;
+}
 
 /* ---------------------------------------------------------------- tabs */
 function setTab(tab, focus) {
@@ -1317,7 +1464,7 @@ function timeTicks(tMax, unit) {
   const s = [1, 2, 5, 10, 15, 30, 60, 120].find(s => tMax / 60 / s <= 8) || 120;
   return { step: s * 60, fmt: t => t / 60 + " min" };
 }
-function drawCharts() { charts.forEach((_, k) => drawChart(k)); drawMap(); }
+function drawCharts() { charts.forEach((_, k) => drawChart(k)); drawMap(); drawLag(); }
 function drawChart(k, out) {   // out = { ctx, W, H, fs } draws into a saved figure; fs scales the axis type
   if (k === 2) return drawMap(out);
   const ch = charts[k];
@@ -1846,15 +1993,22 @@ const FX = [
       ["F = −K(T) dT/ds + ṁ c_p T", "energy flux up the tube, constant along a free section; c_p = (5/2)R/M"],
       ["ds/dT = K(T) / (ṁ c_p T − F)", "rearranged, the profile T(s) follows from F"],
       ["∫ K(T) dT / (ṁ c_p T − F) = L", "taken between the clamp temperatures at the two ends of a section of length L; Newton iteration finds F"],
-      ["Q_clamp = F_in − F_out", "heat a clamp removes; negative means it has to be heated"]],
+      ["Q_clamp = F_in − F_out", "heat a clamp removes; negative means it has to be heated"],
+      ["Q_circ = Q_clamp(ṁ) − Q_clamp(ṁ = 0)", "heat the circulating gas carries to each clamp: the same tubes solved again with no flow give conduction alone"]],
     how: c => c.loop
-      ? "The riser carries ṁ upward and the downcomer carries it back down, so the enthalpy term moves heat as well as conduction. ṁ comes from step 3, which re-solves these profiles for each trial flow."
+      ? "The riser carries ṁ upward and the downcomer carries it back down, so the enthalpy term moves heat as well as conduction. ṁ comes from step 3, which re-solves these profiles for each trial flow. The Q_circ terms sum to zero: what the falling gas gives up at the intercept and cold clamps, the engine and the warm end put back into the rising gas."
       : "With a single tube there is no flow, ṁ = 0, and this is plain conduction: F = −(1/L)∫K dT.",
     vals: ({ P, loop }) => {
-      const h = R.heat_mW, rows = [["Into the target cell and cold clamps, Q_cold", fmtP(h.cold / 1e3)]];
-      if (P.intercept) rows.push([`Intercept at ${P.T_int} K, Q_int`, fmtP(h.intercept / 1e3)]);
-      if (loop && P.engine) rows.push([`Engine clamp at ${fmtK(R.T_engine)} K, Q_eng`, fmtP(h.engine / 1e3)]);
-      rows.push(["Supplied by the pumping cell", fmtP(-h.warm / 1e3)]);
+      const h = R.heat_mW, h0 = R.heat_still_mW, flows = loop && R.mdot_mg_h !== 0;
+      const row = (label, k, sign = 1) => {
+        const out = [[label, fmtP(sign * h[k] / 1e3)]];
+        if (flows) out.push(["  no flow, conduction alone", fmtP(sign * h0[k] / 1e3)], ["  Q_circ, the loop's gas", fmtP(sign * (h[k] - h0[k]) / 1e3)]);
+        return out;
+      };
+      const rows = row("Into the target cell and cold clamps, Q_cold", "cold");
+      if (P.intercept) rows.push(...row(`Intercept at ${P.T_int} K, Q_int`, "intercept"));
+      if (loop && P.engine) rows.push(...row(`Engine clamp at ${fmtK(R.T_engine)} K, Q_eng`, "engine"));
+      rows.push(...row("Supplied by the pumping cell", "warm", -1));
       return rows;
     },
     res: c => `Q_cold = ${fmtP(R.heat_mW.cold / 1e3)}` },
@@ -2019,6 +2173,25 @@ const FX = [
         ["Peak M_p", fxPct(pp.P_peak) + " at " + fmtTime(pp.t_peak)], ["a_l/a_lt", pp.late_ratio.toFixed(3)]];
     },
     res: c => `M_p/M_t → ${R.paper.late_ratio.toFixed(3)}` },
+
+  { title: "Gas temperature against the wall (a diagnostic)",
+    where: c => c.loop ? "The gas flowing through each tube of the loop. The model itself takes the gas at the wall temperature; this step estimates how far it lags."
+      : "Loop mode only. With a single tube the gas only diffuses, with no net flow, and sits at the wall temperature.",
+    eqs: c => [
+      ["q′ = Nu π k_gas (T_gas − T_wall),   Nu = 3.66", "heat the gas exchanges with the wall per unit length: fully developed laminar flow"],
+      ["dT_gas/dx = −(T_gas − T_wall) / λ,   λ = |ṁ| c_p / (Nu π k_gas)", "along the direction of flow, starting from the cell the gas leaves; λ is the length over which the gas catches up with the wall, independent of the tube diameter"],
+      ["Q_past = |ṁ| c_p (T_gas − T_wall) at the intercept", "heat the falling gas still carries past the intercept, which the model books on the intercept"]],
+    how: c => "The wall profile from step 2 is held fixed, and k_gas is taken at the mean of the gas and wall temperatures. Heat transfer is faster where the flow is still developing, so this probably overstates the lags.",
+    vals: c => {
+      const L = R.lag;
+      if (!L) return [["ṁ", "0, no lag"]];
+      const dn = L.legs.find(g => !g.up), icp = dn.marks.find(x => x[0] === "intercept");
+      return [["|ṁ| c_p", (L.mcp_W_K * 1e3).toFixed(2) + " mW/K"], ["λ at T_c", L.lam_cold_mm.toFixed(1) + " mm"]]
+        .concat(L.legs.map((g, i) => [`${LAG_NAMES[i]}, largest lag`, `${g.max_K >= 0 ? "+" : "−"}${Math.abs(g.max_K).toFixed(1)} K at ${g.s_max_cm.toFixed(2)} cm`]))
+        .concat(icp ? [["Falling gas at the intercept", `${icp[3].toFixed(1)} K, wall ${icp[2].toFixed(1)} K`], ["Q_past", fmtP(L.past_intercept_W)]] : [])
+        .concat([["Gas reaching the target cell", dn.arrive_K.toFixed(2) + " K"]]);
+    },
+    res: c => R.lag ? `up to ${Math.max(...R.lag.legs.map(g => Math.abs(g.max_K))).toFixed(0)} K; reaches the target at ${R.lag.legs.find(g => !g.up).arrive_K.toFixed(1)} K` : "no flow, no lag" },
 ];
 const fxEls = FX.map((f, i) => {
   const d = document.createElement("details");

@@ -459,6 +459,54 @@ def relax_curves(sys2, amp, t):
     return Mp, Mt
 
 
+# ------------------------------------------------------------------ gas temperature lag (diagnostic)
+NU_LAMINAR = 3.66               # fully developed laminar flow, wall at fixed temperature
+LAG_STEPS = 2000
+
+
+def gas_lag(sol, legs, mdot, Tc):
+    """How far the flowing gas lags the tube wall. The model takes the gas at the wall temperature; here the gas
+    instead exchanges heat with the wall profile at q' = Nu pi k_gas (Tg - Tw), so along the flow
+    dTg/dx = -(Tg - Tw) / lam, lam = |mdot| cp / (Nu pi k_gas(film)), starting from the cell it leaves.
+    The wall profile is held fixed, so this is an estimate, not part of the solution."""
+    if mdot == 0.0:
+        return None
+    mcp = abs(mdot) * CP
+    lam_of = lambda T: mcp / (NU_LAMINAR * math.pi * k_gas(T))
+    out = []
+    for i, (s, leg) in enumerate(zip(sol, legs)):
+        prof, L = s["profile"], s["length"] * 100.0          # profile: [s cm, T K] from the target cell
+        n, m = LAG_STEPS, len(s["profile"])
+        xs = [L * k / n for k in range(n + 1)]
+        tw, j = [], 1
+        for x in xs:                                         # wall temperature on the grid, as the page samples it
+            while j < m - 1 and x > prof[j][0]:
+                j += 1
+            (s0, t0), (s1, t1) = prof[j - 1], prof[j]
+            tw.append(t1 if s1 <= s0 else t0 + (t1 - t0) * (x - s0) / (s1 - s0))
+        up = (i == 0) == (mdot > 0)                          # gas moves toward the pumping cell
+        order = range(n + 1) if up else range(n, -1, -1)
+        tg = [0.0] * (n + 1)
+        g, dx = None, L / n * 0.01
+        for k in order:
+            g = tw[k] if g is None else tw[k] + (g - tw[k]) * math.exp(-dx / lam_of(0.5 * (g + tw[k])))
+            tg[k] = g
+        kmax = max(range(n + 1), key=lambda k: abs(tg[k] - tw[k]))
+        marks, x = [], 0.0
+        for ni, (Tn, cl, kind) in enumerate(leg["nodes"]):  # the gas where it meets each clamp
+            for xm in ((x, x + cl * 100) if cl > 0 else (x,)):
+                k = min(n, max(0, int(xm / L * n + 0.5)))
+                marks.append([kind, xs[k], tw[k], tg[k]])
+            x += cl * 100 + (leg["free"][ni] * 100 if ni < len(leg["free"]) else 0.0)
+        end = n if up else 0
+        out.append(dict(up=up, max_K=tg[kmax] - tw[kmax], s_max_cm=xs[kmax], T_wall_max=tw[kmax],
+                        arrive_K=tg[end], arrive_wall_K=tw[end], marks=marks,
+                        profile=[[xs[k], tw[k], tg[k]] for k in range(0, n + 1, n // 100)]))
+    down = [d for d in out if not d["up"]]
+    past = sum(mcp * (mk[3] - mk[2]) for d in down for mk in d["marks"] if mk[0] == "intercept")
+    return dict(mcp_W_K=mcp, lam_cold_mm=lam_of(Tc) * 1e3, legs=out, past_intercept_W=past)
+
+
 # ------------------------------------------------------------------ cooler stages
 def disk_view(r, L):
     """View factor between two equal coaxial disks of radius r a distance L apart:
@@ -553,7 +601,8 @@ def pt_load1(Q2, T1, sc):
 
 # ------------------------------------------------------------------ entry
 def thermal(P):
-    """Tube profiles, loop flow and clamp heats with the target cell at P["Tc"]."""
+    """Tube profiles, loop flow and clamp heats with the target cell at P["Tc"]. Also the clamp heats of the same
+    tubes with no flow (conduction alone): the difference is the heat the circulating gas carries between clamps."""
     p = P["p_mbar"] * 100.0
     tube = Tube(P["id_mm"] * 1e-3, P["wall_mm"] * 1e-3)
     legs, errs = build_legs(P)
@@ -569,7 +618,13 @@ def thermal(P):
     for s in sol:
         for kind, Tn, q in s["heats"]:
             heat[kind] += q
-    return tube, legs, errs, mdot, sol, heat
+    still = dict(heat)
+    if mdot != 0.0:
+        still = dict(cold=0.0, intercept=0.0, engine=0.0, warm=0.0)
+        for leg in legs:
+            for kind, Tn, q in solve_leg(leg, tube, p, 0.0)["heats"]:
+                still[kind] += q
+    return tube, legs, errs, mdot, sol, heat, still
 
 
 def cooler_solve(P):
@@ -628,7 +683,7 @@ def cooler_solve(P):
 
 def compute(P):
     P, th, stages, cooler = cooler_solve(P)
-    tube, legs, errs, mdot, sol, heat = th
+    tube, legs, errs, mdot, sol, heat, still = th
     p = P["p_mbar"] * 100.0
     Tc, Th = P["Tc"], P["Th"]
 
@@ -688,8 +743,14 @@ def compute(P):
 
     warnings = list(errs)
     Re = 4.0 * abs(mdot) / (math.pi * tube.d * eta(Tc))
-    if Re > 50:
-        warnings.append("Reynolds number %.0f at the cold end: gas may lag the wall temperature, so the 1-D model overestimates the flow." % Re)
+    lag = gas_lag(sol, legs, mdot, Tc)
+    if lag:
+        dn = [d for d in lag["legs"] if not d["up"]][0]
+        icp = [mk for mk in dn["marks"] if mk[0] == "intercept"]
+        if max(abs(d["max_K"]) for d in lag["legs"]) > 10.0 or dn["arrive_K"] - dn["arrive_wall_K"] > max(1.0, 0.2 * Tc):
+            warnings.append("The gas lags the tube walls near the cold end: coming down, it %sreaches the target cell at %.3g K (target %.3g K). The model takes the gas at the wall temperature, so it %slikely overestimates the loop flow; see the gas temperature on the Heat loads tab."
+                            % ("passes the intercept at %.3g K (wall %.3g K) and " % (icp[0][3], icp[0][2]) if icp else "", dn["arrive_K"], Tc,
+                               "puts too much of the heat on the intercept and " if icp else ""))
     if cooler["map"]:
         if not cooler["held"]:
             cap2 = stages["second"]["capacity"]
@@ -728,6 +789,7 @@ def compute(P):
         Np=Np, Nt=Nt, N_tubes=sum(s["N_tube"] for s in sol),
         tau_x_target_s=Nt / G, tau_x_pump_s=Np / G,
         heat_mW={k: v * 1e3 for k, v in heat.items()},
+        heat_still_mW={k: v * 1e3 for k, v in still.items()},
         stages=stages,
         Tc=Tc, T_shield=P["T_shield"], T_engine=P["T_engine"], cooler=cooler,
         legs=[dict(profile=s["profile"], length_cm=s["length"] * 100,
@@ -742,6 +804,7 @@ def compute(P):
         loss_exchange=(Nt / G) * g_t, loss_capacity=(Nt / Np) * P["T_b_s"] * g_t,
         t_h=[x / 3600.0 for x in t], P_pump=pp, P_target=pt,
         paper=paper,
+        lag=lag,
         zero_t_s=tz, zero_P_pump=zp, zero_P_target=zt, shut_P_pump=sp, shut_P_target=st,
         warnings=warnings,
     )
