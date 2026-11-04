@@ -585,7 +585,7 @@ const DEFAULTS = {
 // the pumping-cell scaling: rows that only flux mode uses, and those the absorbed-power helper sets or uses
 const FLUX_KEYS = ["V_seal_cc", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW"];
 const DEFS = [
-  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
+  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 1, max: 300, log: true, dp: 1 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
   { fs: "cells", key: "V_target_cc", label: "Target cell volume", unit: "cm³", min: 5, max: 500, log: true, dp: 0 },
   { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 2.5, max: 30, dp: 1 },
@@ -621,13 +621,17 @@ const DEFS = [
   { fs: "cooler", key: "cooler_map", label: "Stage temperatures from the PT420 map", toggle: true },
   { fs: "cooler", key: "cooler_pct", label: "Cooler performance, share of the reference chart", unit: "%", min: 30, max: 130, dp: 0 },
 ];
+// a full preset starts from DEFAULTS; the others change only what they name
 const PRESETS = [
+  { name: "Loop, 8 mm, cold engine", full: true, p: {} },
   { name: "Single 6 mm tube", p: { mode: "single", id_mm: 6, wall_mm: 1, length_cm: 8, intercept: false } },
-  { name: "Loop, 8 mm, cold engine", p: { mode: "loop", id_mm: 8, length_cm: 8, engine: true, engine_stage: false, engine_cm: 2, gap_cm: 0.5, T_engine: 25, intercept: true, T_int: 45, s_int_cm: 4 } },
   { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true } },
   { name: "Loop, engine off", p: { mode: "loop", engine: false } },
   { name: "Long target T₁ (48 h)", p: { T1t_h: 48 } },
-  { name: "Defaults", p: DEFAULTS },
+  // MIT-Bates 88-02: cell sizes, pressure and temperature as achieved; the transfer tube and the pumping are the
+  // single-tube preset and the defaults, and the stage temperatures are set, not taken from the PT420 map
+  { name: "Bates 88-02", full: true, p: { mode: "single", p_mbar: 2.6, V_pump_cc: 200, V_target_cc: 79, Tc: 17,
+    id_mm: 6, wall_mm: 1, length_cm: 8, intercept: false, cooler_map: false } },
 ];
 
 let params = Object.assign({}, DEFAULTS);
@@ -742,7 +746,7 @@ $("modeLoop").addEventListener("click", () => { params.mode = "loop"; syncInputs
 PRESETS.forEach(p => {
   const b = document.createElement("button");
   b.type = "button"; b.className = "chip"; b.textContent = p.name;
-  b.addEventListener("click", () => { params = Object.assign({}, p.p === DEFAULTS ? DEFAULTS : params, p.p); syncInputs(); changed(true); });
+  b.addEventListener("click", () => { params = Object.assign({}, p.full ? DEFAULTS : params, p.p); syncInputs(); changed(true); });
   $("presets").appendChild(b);
 });
 

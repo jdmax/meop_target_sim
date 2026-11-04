@@ -412,7 +412,7 @@ const LEVEL_FIELDS = [
 // the pumping-cell scaling: rows that only flux mode uses
 const FLUX_KEYS = ["V_seal_cc", "s_dis", "Pabs_on", "Pabs_seal_mW", "Pabs_mW"];
 const DEFS = [
-  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 10, max: 300, log: true, dp: 0 },
+  { fs: "cells", key: "p_mbar", label: "Operating pressure", unit: "mbar", min: 1, max: 300, log: true, dp: 1 },
   { fs: "cells", key: "V_pump_cc", label: "Pumping cell volume", unit: "cm³", min: 10, max: 500, log: true, dp: 0 },
   { fs: "cells", key: "V_target_cc", label: "Target cell volume", unit: "cm³", min: 5, max: 500, log: true, dp: 0 },
   { fs: "cells", key: "Tc", label: "Target temperature", unit: "K", min: 2.5, max: 30, dp: 1 },
