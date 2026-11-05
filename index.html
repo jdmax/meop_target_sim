@@ -623,10 +623,10 @@ const DEFS = [
 ];
 // a full preset starts from DEFAULTS; the others change only what they name
 const PRESETS = [
-  { name: "Loop, 6 mm, cold engine", full: true, p: { id_mm: 6 } },
-  { name: "Single 6 mm tube", full: true, p: { mode: "single", id_mm: 6, intercept: false } },
-  { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true } },
-  { name: "Loop, engine off", p: { mode: "loop", engine: false } },
+  { name: "Loop, 6 mm, cold engine", full: true, p: { id_mm: 6, M_ss: 70, T_b_s: 120 } },
+  { name: "Single 6 mm tube", full: true, p: { mode: "single", id_mm: 6, intercept: false, M_ss: 70, T_b_s: 120 } },
+  { name: "Loop, first-stage engine", p: { mode: "loop", engine: true, engine_stage: true, M_ss: 70, T_b_s: 120 } },
+  { name: "Loop, engine off", p: { mode: "loop", engine: false, M_ss: 70, T_b_s: 120 } },
   // MIT-Bates 88-02: cell sizes, pressure and temperature as achieved; the transfer tube and the pumping are the
   // single-tube preset and the defaults, and the stage temperatures are set, not taken from the PT420 map
   { name: "Bates 88-02", full: true, p: { mode: "single", p_mbar: 2.6, V_pump_cc: 200, V_target_cc: 79, Tc: 17,
